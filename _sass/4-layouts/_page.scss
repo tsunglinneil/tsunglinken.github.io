@@ -23,12 +23,12 @@
     background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
-    background-color: $light-gray;
+    background-color: #ffffff;
     &:after {
       content: "";
       display: table;
-      width: 100%;
-      min-height: 300px;
+      width: 60%;
+      min-height: 200px;
       padding-top: 50%;
     }
   }
