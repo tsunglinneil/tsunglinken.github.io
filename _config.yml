@@ -1,6 +1,5 @@
-baseurl: "/" # the subpath of your site, e.g. /blog
-url: "" # the base hostname & protocol for your site, e.g. http://example.com
-
+baseurl: "" # the subpath of your site, e.g. /blog
+url: "http://localhost:4000" # the base hostname & protocol for your site, e.g. http://example.com
 
 # Build settings
 markdown: kramdown
@@ -13,22 +12,20 @@ plugins:
 paginate: 5
 paginate_path: "/page/:num"
 
-
 # Pages Path
 defaults:
   - scope:
-      path: '_pages'
+      path: "_pages"
     values:
       permalink: /:basename:output_ext
 
 include:
   - _pages
 
-
 # Tags
-tag_page_dir:         tag
-tag_page_layout:      tag_page
-tag_permalink_style:  pretty
+tag_page_dir: tag
+tag_page_layout: tag_page
+tag_permalink_style: pretty
 
 sass:
   sass_dir: _sass
