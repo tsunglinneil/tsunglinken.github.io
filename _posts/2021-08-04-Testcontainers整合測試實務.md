@@ -3,7 +3,19 @@ layout: post
 title: Testcontainers整合測試實務
 date: 2021-08-04 15:49:41 +0800
 image: testcontainers-article-cover.png
-tags: Resources
+tags:
+  [
+    docker,
+    containers,
+    testcontainers,
+    kafka,
+    redis,
+    rdbms,
+    nosql,
+    integrationtest,
+    springboot,
+    整合測試,
+  ]
 ---
 
 整合測試在本地端進行往往會與實際部署環境有很大的落差，然而 Docker 容器化的技術使得環境建立的門檻降低。

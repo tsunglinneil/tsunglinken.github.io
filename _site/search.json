@@ -3,7 +3,7 @@
     {
       "title"    : "Testcontainers整合測試實務",
       "category" : "",
-      "tags"     : "Resources",
+      "tags"     : "docker, containers, testcontainers, kafka, redis, rdbms, nosql, integrationtest, springboot, and 整合測試",
       "url"      : "/2021/08/04/Testcontainers%E6%95%B4%E5%90%88%E6%B8%AC%E8%A9%A6%E5%AF%A6%E5%8B%99/",
       "date"     : "4 Aug, 2021"
     } 
