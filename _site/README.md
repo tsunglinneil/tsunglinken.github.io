@@ -1,48 +1,47 @@
-Zolan - Modern & Minimal Theme for Jekyll
-======
+# Zolan - Modern & Minimal Theme for Jekyll
+
 Zolan is a minimal blog theme for Jekyll.
 
-* * *
+---
 
-Table of Contents
------------------
-*   [Features](#features)
-*   [Demo](#demo)
-*   [Deployment](#deployment)
-*   [Posts](#posts)
-*   [Disqus Comments](#DisqusComments)
-*   [Instagram](#instagram)
-*   [Google Analytics](#GoogleAnalytics)
-*   [Update favicon](#UpdateFavicon)
-*   [Credits](#Credits)
-*   [Support](#Support)
+## Table of Contents
 
-* * *
+- [Features](#features)
+- [Demo](#demo)
+- [Deployment](#deployment)
+- [Posts](#posts)
+- [Disqus Comments](#DisqusComments)
+- [Instagram](#instagram)
+- [Google Analytics](#GoogleAnalytics)
+- [Update favicon](#UpdateFavicon)
+- [Credits](#Credits)
+- [Support](#Support)
+
+---
 
 ### Features
 
-* 100% responsive and clean theme
+- 100% responsive and clean theme
 
-* Optimized for mobile devices
+- Optimized for mobile devices
 
-* Minimal design
+- Minimal design
 
-* Valid HTML5 code
+- Valid HTML5 code
 
-* Post sharing
+- Post sharing
 
-* Subscription form
+- Subscription form
 
-* Supports Disqus Comments
+- Supports Disqus Comments
 
-* Instagram Feed
+- Instagram Feed
 
-* Ionicons Icons
+- Ionicons Icons
 
-* Google Fonts
+- Google Fonts
 
-
-* * *
+---
 
 ### Demo
 
@@ -54,7 +53,7 @@ The post page would look like this:
 
 ![Post page preview](https://github.com/artemsheludko/zolan/blob/master/images/zolan-post.png?raw=true)
 
-* * *
+---
 
 ### Deployment
 
@@ -62,7 +61,7 @@ To run the theme locally, navigate to the theme directory and run `bundle instal
 
 I would recommend checking the [Deployment Methods](https://jekyllrb.com/docs/deployment-methods/) page on Jekyll website.
 
-* * *
+---
 
 ### Posts
 
@@ -76,14 +75,13 @@ To create a new post, you can create a new markdown file inside the \_posts dire
       tags: Life
       ---
 
-
 You can set the tags and the post image.
 
 Add post images to **/images/** directory.
 
 For tags, try to not add space between two words, for example, `Ruby on Rails`, could be something like (`ruby-on-rails`, `Ruby_on_Rails`, or `Ruby-on-Rails`).
 
-* * *
+---
 
 ### Disqus Comments
 
@@ -94,12 +92,11 @@ Open `_data/settings.yml` file, and change the `mr-brown` value on line 26 with 
       Comment Section (Disqus)
       disqus-identifier: mr-brown # Add your shortname for Disqus Comment. For example mr-brown
 
-
 That’s all you need to setup Disqus from the theme side. If you get any issue regarding that comments are unable to load. First, make sure you have [registered your website with Disqus (Step 1)](https://help.disqus.com/customer/portal/articles/466182-publisher-quick-start-guide).
 
 And also check [Disqus troubleshooting guide](https://help.disqus.com/customer/portal/articles/472007-i-m-receiving-the-message-%22we-were-unable-to-load-disqus-%22) if you still have issues.
 
-* * *
+---
 
 ### Instagram
 
@@ -107,8 +104,8 @@ The Instagram feed is working using [Instafeed.js](http://instafeedjs.com/) to s
 
 First, you will need to get your account `userId` and `accessToken` from the following URLs:
 
-*   userId: [http://codeofaninja.com/tools/find-instagram-user-id/](http://codeofaninja.com/tools/find-instagram-user-id/)
-*   accessToken: [instagram.pixelunion.net](http://instagram.pixelunion.net/)
+- userId: [http://codeofaninja.com/tools/find-instagram-user-id/](http://codeofaninja.com/tools/find-instagram-user-id/)
+- accessToken: [instagram.pixelunion.net](http://instagram.pixelunion.net/)
 
 Second, open the `js/common.js` file and replace the `userId` and `accessToken` values.
 
@@ -121,14 +118,12 @@ Second, open the `js/common.js` file and replace the `userId` and `accessToken` 
           template: ''
     });
 
-
 Third, open the `_data/settings.yml` file and replace the `instafeed: false` on `instafeed: true` value.
 
     # Instagram Feed
     instafeed: false # To enable the instafeed, use the value true. To turn off use the value false.
 
-
-* * *
+---
 
 ### Google Analytics
 
@@ -137,34 +132,48 @@ To integrate Google Analytics, open `_data/settings.yml`, and add your Google An
     # Google Analytics
     google-analytics: # Add your identifier. For example UA-99631805-1
 
-
-* * *
+---
 
 ### Update favicon
 
 You can find the current favicon (favicon.ico) inside the theme root directory, just replace it with your new favicon.
 
-* * *
+---
 
 ### Credits
 
 I have used the following scripts, fonts or other files as listed.
 
-*   [Google Fonts](https://fonts.google.com/specimen/Nunito) (Roboto, Sans Serif).
-*   [Ionicons Icons](https://ionicons.com/)
-*   [FitVids.js](http://fitvidsjs.com/)
-*   [Medium’s Image Zoom](https://github.com/fat/zoom.js)
-*   [Instafeed.js](http://instafeedjs.com/)
-*   [jQuery.com](https://jquery.com/)
-*   Preview Images form [unsplash.com](https://unsplash.com/), [pexels.com](https://www.pexels.com/)
+- [Google Fonts](https://fonts.google.com/specimen/Nunito) (Roboto, Sans Serif).
+- [Ionicons Icons](https://ionicons.com/)
+- [FitVids.js](http://fitvidsjs.com/)
+- [Medium’s Image Zoom](https://github.com/fat/zoom.js)
+- [Instafeed.js](http://instafeedjs.com/)
+- [jQuery.com](https://jquery.com/)
+- Preview Images form [unsplash.com](https://unsplash.com/), [pexels.com](https://www.pexels.com/)
 
-* * *
+---
+
 ### License
 
 Mit License
 
-* * *
+---
 
 ### Support
+
 <p>If you like the themes that I create you can become my sponsor on <a href="https://www.patreon.com/artemsheludko" target="_blank">Patreon</a>.
 <p align="center"><b>Thank you for your support ❤️</b></p>
+
+### Development
+
+- Build your project
+
+  ```
+  jekyll build
+  ```
+
+- Running server
+  ```
+  jekyll serve
+  ```

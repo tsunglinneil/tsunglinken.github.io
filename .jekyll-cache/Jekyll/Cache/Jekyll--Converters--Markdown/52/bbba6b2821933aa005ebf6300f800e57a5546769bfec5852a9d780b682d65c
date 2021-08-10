@@ -1,0 +1,687 @@
+I"�<p>整合測試在本地端進行往往會與實際部署環境有很大的落差，然而 Docker 容器化的技術使得環境建立的門檻降低。</p>
+
+<p>這篇文章將從整合測試在實務上會遇到的問題，並根據現今軟體開發的趨勢，搭配 Kafka、Redis、RDBMS，說明如何運用容器化的技術解決實務上測試的困難點。</p>
+
+<h2 id="本篇文章中提及之各種測試名詞說明">本篇文章中提及之各種測試名詞說明</h2>
+
+<ul>
+  <li>單元測試 → 開發人員撰寫的單元測試</li>
+  <li>整合測試 → 開發人員撰寫的整合測試</li>
+  <li>手動整合測試 → 部署到共享環境中的使用者測試</li>
+</ul>
+
+<p>若想暸解更多關於整合測試/單元測試，提供以下昕力大學資源參考</p>
+
+<ul>
+  <li><a href="https://www.tpisoftware.com/tpu/articleDetails/1256">Spring Boot 的單元測試</a></li>
+  <li><a href="https://www.tpisoftware.com/tpu/articleDetails/1294">模擬測試框架 Mockito 介紹</a></li>
+</ul>
+
+<h2 id="談談整合測試實務上的問題">談談整合測試實務上的問題</h2>
+
+<div class="row">
+    <div class="col"><img src="/images/testcontainers/1.png" width="150" height="150" alt="" /></div>
+    <div class="col"><img src="/images/testcontainers/turn.png" width="150" height="150" alt="" /></div>
+    <div class="col"><img src="/images/testcontainers/2.png" width="150" height="150" alt="" /></div>
+</div>
+<p>如上圖可看到廣為人知的測試金字塔(此概念源自於<em><a href="https://www.mountaingoatsoftware.com/company/about-mike-cohn">Mike Cohn</a></em> ，可查閱<a href="https://www.mountaingoatsoftware.com/blog/the-forgotten-layer-of-the-test-automation-pyramid">這篇 BLOG 文章</a>)，描述了各個層級的測試比重應該要是單元測試&gt;整合測試&gt;手動整合測試，然而實務上的狀況則通常相反，手動整合集成測試的比重最高 → 從金字塔變成了冰淇淋 ?</p>
+
+<p><strong>整合測試遇到的問題大致如下：</strong></p>
+
+<ul>
+  <li>整合測試相較於單元測試，運行的時間和成本都較高。</li>
+  <li>環境建置複雜，需要在開發環境預先安裝建置好所需工具，例如: 資料庫等外部依賴。</li>
+</ul>
+
+<p>藉由上述的問題，環境建置複雜度的成本是更主要的原因，因此可以理解為何許多情況下會優先考慮直接部署到 SIT/UAT 環境進行手動整合測試。</p>
+
+<h2 id="所以就繼續手動整合測試吧">所以就繼續手動整合測試吧!?</h2>
+
+<p>我們先把目光轉移到幾個面向</p>
+
+<ul>
+  <li><strong>微服務。</strong></li>
+  <li><strong>分散式。</strong></li>
+</ul>
+
+<p>在上述主流的架構當中，服務和存儲裝置不再只是集中在一個地方，而是能夠分散到在各地運作，以達到靈活、延展、高可用、資料隔離等等優點，但也衍生了一些問題</p>
+
+<ul>
+  <li>多個服務之間的介接測試成本高，需要部署多個服務後才能進行完整測試。</li>
+  <li>資料又該如何共享。</li>
+</ul>
+
+<p>為了因應上述的架構，往往會需要搭配一些解決方案</p>
+
+<ul>
+  <li>例如你需要部署的服務變多了，需要導入 CI/CD 自動化你的部署流程，節省開發人員的工作，但相對自動部署頻率的提高，也使得測試人員可能更無法即時的去測試每次更新的正確性。</li>
+  <li>例如你可能還會需要搭建外部緩存機制、消息代理等等，也就是外部依賴數量增加，需要測試的環節也變多了，每次為了驗證這些外部依賴，又只依靠手動整合測試的情況下，可能只能增加部署的頻率。</li>
+</ul>
+
+<p>尚未實施上述架構的團隊，可能先不用擔心這些問題，但相信一定有遇過下列情境</p>
+
+<ul>
+  <li>多團隊協作，在共享環境中部署、更新了共享資源，例如:資料庫、第三方套件等等，造成其中一方的功能無法正確被驗證，而程式可能根本就沒有異動。</li>
+  <li>開發測試共用資料庫，因為多人開發，資料或數據庫被修改，造成測試結果失敗或不準確。</li>
+  <li>
+    <p>搭配 H2 撰寫整合測試時，即使通過測試，當部署到線上環境時依然會出錯，主要原因和問題如下</p>
+
+    <ol>
+      <li>SQL 語法不兼容。</li>
+      <li>需維護多個版本的 SQL 語法。</li>
+      <li>環境資料表落差。</li>
+    </ol>
+  </li>
+</ul>
+
+<p>不論哪種情境，都顯示出整合測試在開發者的環境中進行是有必要的，但如同前面提到的，環境建置的成本是個大問題。</p>
+
+<h2 id="容器化整合測試方案選擇">容器化整合測試方案選擇</h2>
+
+<p>既然有容器化的技術，使用 Container 來進行整合測試會是一個選擇。</p>
+
+<ul>
+  <li>
+    <p><a href="https://docs.docker.com/compose/">Docker-Compose</a></p>
+
+    <p>將多個服務建構成 Images 以 docker-compose up 的方式執行，但有一些侷限性。</p>
+
+    <ol>
+      <li>每個服務的 PORT 是固定的，在環境上的配置造成了限制，且無法進行並行測試。</li>
+      <li>多個測試可能無法同時進行，因為也許在 A 情境下的測試資料不應留到 B 情境。</li>
+      <li>當有多個不同服務或版本需要被測試時，配置將會是個問題。</li>
+      <li>每次測試前後都需要自行啟動/關閉 Container。</li>
+    </ol>
+  </li>
+  <li>
+    <p><a href="https://github.com/fabric8io/docker-maven-plugin">Maven Plugin - docker-maven-plugin</a></p>
+
+    <p>若想達到自動化測試，Maven 的配置方案也許可以考慮，但也有上述提到的部分問題。</p>
+  </li>
+  <li>
+    <p><a href="https://docs.docker.com/engine/api/v1.40/#">Docker API</a></p>
+
+    <p>Docker 提供了 REST API，因此若是可以自行使用這些 API，將可使得整合測試的設計更靈活。</p>
+  </li>
+</ul>
+
+<p>接著進入本篇重點，結合 JVM 與 Container 來實現整合測試</p>
+
+<h2 id="介紹-testcontainers">介紹 TestContainers</h2>
+
+<p>擷取<a href="https://github.com/testcontainers/testcontainers-java">開源專案</a>上針對 TestContainers 的說明</p>
+
+<p><code class="language-plaintext highlighter-rouge">”Testcontainers is a Java 8 library that supports JUnit tests, providing lightweight, throwaway instances of common databases, Selenium web browsers, or anything else that can run in a Docker container.”</code></p>
+
+<p>初步可以得知，Testcontainers 是 Java8 的類庫，採用容器化的技術，能夠各自獨立運行並使用與 Production 相同版本的外部依賴，且 Container 能運行在各個不同平台的特性，減少了環境搭建的複雜度。</p>
+
+<p>TestContainer 能夠使用任何具有 Docker Image 的外部依賴項目，例如: 資料庫、Web 瀏覽器工具、消息代理、網頁伺服器等等，同時也支援 JVM 的測試框架，例如: JUnit，另外還支持各種語言的版本，目前 Java 的版本是比較完整的（<a href="https://github.com/testcontainers">點擊查閱支援項目清單</a>）。</p>
+
+<h2 id="應用場景">應用場景</h2>
+
+<ul>
+  <li>
+    <p><strong>資料庫數據存取層的整合測試</strong></p>
+
+    <p>Example: 任何容器化的資料庫類型，MySQL、Postgrest…</p>
+  </li>
+  <li>
+    <p><strong>外部依賴項目的整合測試</strong></p>
+
+    <p>Example: LDAP、Redis、Kafka、Micro Service、Nginx…</p>
+  </li>
+  <li>
+    <p><strong>自動化 UI 整合測試</strong></p>
+
+    <p>Example: Selenium browser</p>
+  </li>
+  <li>
+    <p><strong>自動化整合測試</strong></p>
+
+    <p>Example: dind-drone-plugin</p>
+  </li>
+</ul>
+
+<h2 id="導入團隊前的建議事項">導入團隊前的建議事項</h2>
+
+<ul>
+  <li>具有 Docker 的概念及操作經驗將可幫助理解其運作。</li>
+  <li>確認並列出需要被測試的外部依賴項目，一開始先聚焦確認好測試的目的和方向會省下許多時間。</li>
+</ul>
+
+<h2 id="實際測試範例說明">實際測試範例說明</h2>
+
+<h3 id="︎-專案結構簡述"><strong>▶︎ 專案結構簡述</strong></h3>
+
+<p>分別以 Kafka、Redis、RDBMS(MSSQL)進行，使用 Spring Boot 2 及 Junit 5，並引用前述依賴(Kafka、Redis、MSSQL)撰寫 Production Code 或配置，再引用 Testcontainers Spring Boot 的依賴撰寫測試。</p>
+
+<p><strong>• Maven 依賴</strong></p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.springframework.boot<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.springframework.boot<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>spring-boot-starter-logging<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.springframework.boot<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>spring-boot-starter-data-jpa<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.springframework.boot<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>spring-boot-starter-web<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.springframework.boot<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>spring-boot-starter-test<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;scope&gt;</span>test<span class="nt">&lt;/scope&gt;</span>
+    <span class="nt">&lt;exclusions&gt;</span>
+        <span class="nt">&lt;exclusion&gt;</span>
+            <span class="nt">&lt;groupId&gt;</span>org.junit.vintage<span class="nt">&lt;/groupId&gt;</span>
+            <span class="nt">&lt;artifactId&gt;</span>junit-vintage-engine<span class="nt">&lt;/artifactId&gt;</span>
+        <span class="nt">&lt;/exclusion&gt;</span>
+    <span class="nt">&lt;/exclusions&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="c">&lt;!-- test - junit 5 --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.junit.jupiter<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>junit-jupiter-api<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;version&gt;</span>5.4.2<span class="nt">&lt;/version&gt;</span>
+    <span class="nt">&lt;scope&gt;</span>test<span class="nt">&lt;/scope&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.junit.jupiter<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>junit-jupiter-params<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;version&gt;</span>5.4.2<span class="nt">&lt;/version&gt;</span>
+    <span class="nt">&lt;scope&gt;</span>test<span class="nt">&lt;/scope&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.junit.jupiter<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>junit-jupiter-engine<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;version&gt;</span>5.4.2<span class="nt">&lt;/version&gt;</span>
+    <span class="nt">&lt;scope&gt;</span>test<span class="nt">&lt;/scope&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</code></pre></div></div>
+
+<h3 id="︎-實際演練-kafka"><strong>▶︎</strong> <strong>實際演練-Kafka</strong></h3>
+
+<p>建置 Spring Boot 2 專案，並引用 Kafka 依賴，建立 Producer 發送消息、Consumer 訂閱 Topic 取得並回應訊息，這裡在本地環境不去安裝及建立 Kafka，也不使用 Embedded Kafka，而是使用 TestContainers 協助建立 Kafka Container 進行整合測試。</p>
+
+<p><strong>• Maven 依賴</strong></p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">&lt;!-- kafka streams --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.apache.kafka<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>kafka-streams<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="c">&lt;!-- kafka spring --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.springframework.kafka<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>spring-kafka<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="c">&lt;!-- test - testcontainers - kafka --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.testcontainers<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>kafka<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;version&gt;</span>1.14.3<span class="nt">&lt;/version&gt;</span>
+    <span class="nt">&lt;scope&gt;</span>test<span class="nt">&lt;/scope&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="c">&lt;!-- test - kafka test util --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.springframework.kafka<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>spring-kafka-test<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;scope&gt;</span>test<span class="nt">&lt;/scope&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</code></pre></div></div>
+
+<p><strong>說明：</strong></p>
+
+<p>spring-kafka-test 依賴，可以讓我們輕易的去驗證 Producer＆Consumer 的資料狀態。</p>
+
+<p><strong>• Kafka Producer 實作</strong></p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Component</span>
+<span class="nd">@ConditionalOnProperty</span><span class="o">(</span><span class="n">name</span> <span class="o">=</span> <span class="s">"enable.kafka"</span><span class="o">,</span> <span class="n">havingValue</span><span class="o">=</span><span class="s">"true"</span><span class="o">)</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">KafkaSenderService</span> <span class="o">{</span>
+    <span class="kd">private</span> <span class="kd">static</span> <span class="nc">Logger</span> <span class="n">logger</span> <span class="o">=</span> <span class="nc">LoggerFactory</span><span class="o">.</span><span class="na">getLogger</span><span class="o">(</span><span class="nc">DatabaseInitialService</span><span class="o">.</span><span class="na">class</span><span class="o">);</span>
+
+    <span class="nd">@Autowired</span>
+    <span class="kd">private</span> <span class="nc">KafkaTemplate</span><span class="o">&lt;</span><span class="nc">String</span><span class="o">,</span> <span class="nc">String</span><span class="o">&gt;</span> <span class="n">kafkaTemplate</span><span class="o">;</span>
+
+    <span class="nd">@EventListener</span><span class="o">(</span><span class="nc">ApplicationStartedEvent</span><span class="o">.</span><span class="na">class</span><span class="o">)</span>
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">send</span><span class="o">()</span> <span class="o">{</span>
+        <span class="n">kafkaTemplate</span><span class="o">.</span><span class="na">send</span><span class="o">(</span><span class="s">"testcontainers"</span><span class="o">,</span> <span class="s">"kafka"</span><span class="o">,</span> <span class="s">"TestcontainersKafka"</span><span class="o">).</span><span class="na">addCallback</span><span class="o">(</span><span class="n">result</span> <span class="o">-&gt;</span> <span class="o">{</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">result</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+                <span class="nc">RecordMetadata</span> <span class="n">recordMetadata</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="na">getRecordMetadata</span><span class="o">();</span>
+                <span class="n">logger</span><span class="o">.</span><span class="na">info</span><span class="o">(</span><span class="s">"producer send data to {}, {}, {}"</span><span class="o">,</span> <span class="n">recordMetadata</span><span class="o">.</span><span class="na">topic</span><span class="o">(),</span> <span class="n">recordMetadata</span><span class="o">.</span><span class="na">partition</span><span class="o">(),</span>
+                        <span class="n">recordMetadata</span><span class="o">.</span><span class="na">offset</span><span class="o">());</span>
+            <span class="o">}</span>
+        <span class="o">},</span> <span class="n">ex</span> <span class="o">-&gt;</span> <span class="o">{</span>
+            <span class="n">logger</span><span class="o">.</span><span class="na">error</span><span class="o">(</span><span class="s">"something wrong..."</span><span class="o">,</span> <span class="n">ex</span><span class="o">);</span>
+        <span class="o">});</span>
+
+        <span class="n">kafkaTemplate</span><span class="o">.</span><span class="na">flush</span><span class="o">();</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p><strong>說明：</strong></p>
+
+<p>利用 KafkaTemplate 來幫助我們更容易的建立 Topic 以及欲寫入的資料</p>
+
+<p>10: 寫入 key/value “kafka”/”TestcontainersKafka” 給 Kafka Topic “testcontainers”，並 log 印出資訊。</p>
+
+<p><strong>• 建立測試</strong></p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@SpringBootTest</span>
+<span class="kd">class</span> <span class="nc">KafkaTest</span> <span class="o">{</span>
+    <span class="kd">private</span> <span class="kd">static</span> <span class="nc">Logger</span> <span class="n">logger</span> <span class="o">=</span> <span class="nc">LoggerFactory</span><span class="o">.</span><span class="na">getLogger</span><span class="o">(</span><span class="nc">KafkaTest</span><span class="o">.</span><span class="na">class</span><span class="o">);</span>
+
+    <span class="kd">static</span> <span class="nc">KafkaContainer</span> <span class="n">kafkaContainer</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">KafkaContainer</span><span class="o">();</span>
+
+    <span class="nd">@DynamicPropertySource</span>
+    <span class="kd">static</span> <span class="kt">void</span> <span class="nf">kafkaProperties</span><span class="o">(</span><span class="nc">DynamicPropertyRegistry</span> <span class="n">registry</span><span class="o">)</span> <span class="o">{</span>
+        <span class="n">kafkaContainer</span><span class="o">.</span><span class="na">start</span><span class="o">();</span>
+        <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.kafka.properties.bootstrap.servers"</span><span class="o">,</span> <span class="nl">kafkaContainer:</span><span class="o">:</span><span class="n">getBootstrapServers</span><span class="o">);</span>
+        <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.kafka.consumer.group-id"</span><span class="o">,</span> <span class="o">()</span> <span class="o">-&gt;</span> <span class="s">"testcontainersapp"</span><span class="o">);</span>
+        <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.kafka.consumer.properties.auto.offset.reset"</span><span class="o">,</span> <span class="o">()</span> <span class="o">-&gt;</span> <span class="s">"earliest"</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Autowired</span>
+    <span class="kd">private</span> <span class="nc">KafkaProperties</span> <span class="n">properties</span><span class="o">;</span>
+
+    <span class="nd">@Test</span>
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">testKafkaProducerSendDataAndConsumerReceiveData</span><span class="o">()</span> <span class="o">{</span>
+        <span class="kd">final</span> <span class="nc">Consumer</span><span class="o">&lt;</span><span class="nc">String</span><span class="o">,</span> <span class="nc">String</span><span class="o">&gt;[]</span> <span class="n">consumer</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Consumer</span><span class="o">[]{</span><span class="n">createConsumer</span><span class="o">(</span><span class="s">"testcontainers"</span><span class="o">)};</span>
+
+        <span class="nc">String</span> <span class="n">actual</span> <span class="o">=</span> <span class="s">""</span><span class="o">;</span>
+        <span class="k">while</span> <span class="o">(</span><span class="kc">true</span><span class="o">)</span> <span class="o">{</span>
+            <span class="nc">ConsumerRecords</span><span class="o">&lt;</span><span class="nc">String</span><span class="o">,</span> <span class="nc">String</span><span class="o">&gt;</span> <span class="n">records</span> <span class="o">=</span> <span class="nc">KafkaTestUtils</span><span class="o">.</span><span class="na">getRecords</span><span class="o">(</span><span class="n">consumer</span><span class="o">[</span><span class="mi">0</span><span class="o">],</span> <span class="mi">10000</span><span class="o">);</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">records</span><span class="o">.</span><span class="na">isEmpty</span><span class="o">())</span> <span class="o">{</span>
+                <span class="k">break</span><span class="o">;</span>
+            <span class="o">}</span>
+            <span class="k">for</span> <span class="o">(</span><span class="nc">ConsumerRecord</span><span class="o">&lt;</span><span class="nc">String</span><span class="o">,</span> <span class="nc">String</span><span class="o">&gt;</span> <span class="n">record</span> <span class="o">:</span> <span class="n">records</span><span class="o">)</span> <span class="o">{</span>
+                <span class="n">actual</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="na">value</span><span class="o">();</span>
+            <span class="o">}</span>
+        <span class="o">}</span>
+
+        <span class="n">assertEquals</span><span class="o">(</span><span class="s">"TestcontainersKafka"</span><span class="o">,</span> <span class="n">actual</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="kd">private</span> <span class="nc">Consumer</span><span class="o">&lt;</span><span class="nc">String</span><span class="o">,</span> <span class="nc">String</span><span class="o">&gt;</span> <span class="nf">createConsumer</span><span class="o">(</span><span class="nc">String</span> <span class="n">topicName</span><span class="o">)</span> <span class="o">{</span>
+        <span class="nc">Consumer</span><span class="o">&lt;</span><span class="nc">String</span><span class="o">,</span> <span class="nc">String</span><span class="o">&gt;</span>
+                <span class="n">consumer</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">DefaultKafkaConsumerFactory</span><span class="o">&lt;&gt;(</span><span class="n">properties</span><span class="o">.</span><span class="na">buildConsumerProperties</span><span class="o">(),</span> <span class="nl">StringDeserializer:</span><span class="o">:</span><span class="k">new</span><span class="o">,</span>
+                        <span class="nl">StringDeserializer:</span><span class="o">:</span><span class="k">new</span><span class="o">).</span><span class="na">createConsumer</span><span class="o">();</span>
+
+        <span class="n">consumer</span><span class="o">.</span><span class="na">subscribe</span><span class="o">(</span><span class="nc">Collections</span><span class="o">.</span><span class="na">singletonList</span><span class="o">(</span><span class="n">topicName</span><span class="o">));</span>
+        <span class="k">return</span> <span class="n">consumer</span><span class="o">;</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p><strong>說明：</strong></p>
+
+<p>5: 實例化 Kafka Container。</p>
+
+<p>7-13: 啟動 Kafka Container 並動態指定設定檔參數。</p>
+
+<p>18-34: 利用 Kafka Consumer API 取得訂閱的 Topic “testcontainers”資料。</p>
+
+<p>36-43: 實例化 Kafka Consumer 並訂閱 Topic “testcontainers。</p>
+
+<p><strong>• 執行測試</strong></p>
+
+<p><strong>[啟動容器]</strong></p>
+
+<div><img src="/images/testcontainers/kafka/startup.png" width="800" height="150" alt="" /></div>
+
+<p><strong>[測試結果]</strong></p>
+
+<div><img src="/images/testcontainers/kafka/run-test.png" width="800" height="150" alt="" /></div>
+
+<h3 id="︎-實際演練-rdbmsmssql"><strong>▶︎</strong> <strong>實際演練-RDBMS(MSSQL)</strong></h3>
+
+<p>建置 Spring Boot 2 專案，並引用 MSSQL 依賴，這裡在本地環境不去安裝及建立 MSSQL，而是使用 TestContainers 協助建立 MSSQL Container 進行數據層的整合測試。</p>
+
+<p><strong>• Maven 依賴</strong></p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">&lt;!-- mssql server --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>com.microsoft.sqlserver<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>mssql-jdbc<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;scope&gt;</span>runtime<span class="nt">&lt;/scope&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="c">&lt;!-- test - testcontainers - mssql server --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.testcontainers<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>mssqlserver<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;version&gt;</span>1.14.3<span class="nt">&lt;/version&gt;</span>
+    <span class="nt">&lt;scope&gt;</span>test<span class="nt">&lt;/scope&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</code></pre></div></div>
+
+<p><strong>• Model &amp; Repository (使用 Spring Data JPA)</strong></p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/** Model */</span>
+<span class="nd">@Entity</span>
+<span class="nd">@Table</span><span class="o">(</span><span class="n">name</span> <span class="o">=</span> <span class="s">"book_category"</span><span class="o">,</span> <span class="n">schema</span> <span class="o">=</span> <span class="s">"dbo"</span><span class="o">)</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">BookCategory</span> <span class="o">{</span>
+    <span class="kd">private</span> <span class="kt">int</span> <span class="n">bookSeq</span><span class="o">;</span>
+    <span class="kd">private</span> <span class="nc">String</span> <span class="n">categoryName</span><span class="o">;</span>
+    <span class="kd">private</span> <span class="kt">int</span> <span class="n">sort</span><span class="o">;</span>
+    <span class="kd">private</span> <span class="nc">String</span> <span class="n">suspend</span><span class="o">;</span>
+
+    <span class="nd">@Id</span>
+    <span class="nd">@GeneratedValue</span><span class="o">(</span><span class="n">strategy</span><span class="o">=</span><span class="nc">GenerationType</span><span class="o">.</span><span class="na">IDENTITY</span><span class="o">)</span>
+    <span class="nd">@Column</span><span class="o">(</span><span class="n">name</span> <span class="o">=</span> <span class="s">"book_seq"</span><span class="o">)</span>
+    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">getBookSeq</span><span class="o">()</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="n">bookSeq</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">setBookSeq</span><span class="o">(</span><span class="kt">int</span> <span class="n">bookSeq</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">bookSeq</span> <span class="o">=</span> <span class="n">bookSeq</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Basic</span>
+    <span class="nd">@Column</span><span class="o">(</span><span class="n">name</span> <span class="o">=</span> <span class="s">"category_name"</span><span class="o">)</span>
+    <span class="kd">public</span> <span class="nc">String</span> <span class="nf">getCategoryName</span><span class="o">()</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="n">categoryName</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">setCategoryName</span><span class="o">(</span><span class="nc">String</span> <span class="n">categoryName</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">categoryName</span> <span class="o">=</span> <span class="n">categoryName</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Basic</span>
+    <span class="nd">@Column</span><span class="o">(</span><span class="n">name</span> <span class="o">=</span> <span class="s">"sort"</span><span class="o">)</span>
+    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">getSort</span><span class="o">()</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="n">sort</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">setSort</span><span class="o">(</span><span class="kt">int</span> <span class="n">sort</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">sort</span> <span class="o">=</span> <span class="n">sort</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Basic</span>
+    <span class="nd">@Column</span><span class="o">(</span><span class="n">name</span> <span class="o">=</span> <span class="s">"suspend"</span><span class="o">)</span>
+    <span class="kd">public</span> <span class="nc">String</span> <span class="nf">getSuspend</span><span class="o">()</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="n">suspend</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">setSuspend</span><span class="o">(</span><span class="nc">String</span> <span class="n">suspend</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">suspend</span> <span class="o">=</span> <span class="n">suspend</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="kd">static</span> <span class="nc">BookCategory</span> <span class="nf">createBookCategory</span><span class="o">(</span><span class="nc">String</span> <span class="n">categoryName</span><span class="o">,</span> <span class="kt">int</span> <span class="n">sort</span><span class="o">)</span> <span class="o">{</span>
+        <span class="nc">BookCategory</span> <span class="n">bookCategory</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">BookCategory</span><span class="o">();</span>
+        <span class="n">bookCategory</span><span class="o">.</span><span class="na">setCategoryName</span><span class="o">(</span><span class="n">categoryName</span><span class="o">);</span>
+        <span class="n">bookCategory</span><span class="o">.</span><span class="na">setSort</span><span class="o">(</span><span class="n">sort</span><span class="o">);</span>
+        <span class="n">bookCategory</span><span class="o">.</span><span class="na">setSuspend</span><span class="o">(</span><span class="s">"N"</span><span class="o">);</span>
+        <span class="k">return</span> <span class="n">bookCategory</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Override</span>
+    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">equals</span><span class="o">(</span><span class="nc">Object</span> <span class="n">o</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">if</span> <span class="o">(</span><span class="k">this</span> <span class="o">==</span> <span class="n">o</span><span class="o">)</span> <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+        <span class="k">if</span> <span class="o">(</span><span class="n">o</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">getClass</span><span class="o">()</span> <span class="o">!=</span> <span class="n">o</span><span class="o">.</span><span class="na">getClass</span><span class="o">())</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+        <span class="nc">BookCategory</span> <span class="n">that</span> <span class="o">=</span> <span class="o">(</span><span class="nc">BookCategory</span><span class="o">)</span> <span class="n">o</span><span class="o">;</span>
+        <span class="k">return</span> <span class="n">bookSeq</span> <span class="o">==</span> <span class="n">that</span><span class="o">.</span><span class="na">bookSeq</span> <span class="o">&amp;&amp;</span>
+            <span class="n">sort</span> <span class="o">==</span> <span class="n">that</span><span class="o">.</span><span class="na">sort</span> <span class="o">&amp;&amp;</span>
+            <span class="nc">Objects</span><span class="o">.</span><span class="na">equals</span><span class="o">(</span><span class="n">categoryName</span><span class="o">,</span> <span class="n">that</span><span class="o">.</span><span class="na">categoryName</span><span class="o">)</span> <span class="o">&amp;&amp;</span>
+            <span class="nc">Objects</span><span class="o">.</span><span class="na">equals</span><span class="o">(</span><span class="n">suspend</span><span class="o">,</span> <span class="n">that</span><span class="o">.</span><span class="na">suspend</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Override</span>
+    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">hashCode</span><span class="o">()</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="nc">Objects</span><span class="o">.</span><span class="na">hash</span><span class="o">(</span><span class="n">bookSeq</span><span class="o">,</span> <span class="n">categoryName</span><span class="o">,</span> <span class="n">sort</span><span class="o">,</span> <span class="n">suspend</span><span class="o">);</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+
+<span class="cm">/** Repository */</span>
+<span class="kd">public</span> <span class="kd">interface</span> <span class="nc">BookCategoryRepository</span> <span class="kd">extends</span> <span class="nc">JpaRepository</span><span class="o">&lt;</span><span class="nc">BookCategory</span><span class="o">,</span> <span class="nc">Integer</span><span class="o">&gt;</span> <span class="o">{</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p><strong>說明：</strong></p>
+
+<p>建立 Entity 物件及 Spring Data JPA Repository。</p>
+
+<p><strong>• 初始化資料表</strong></p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SET</span> <span class="n">ANSI_NULLS</span> <span class="k">ON</span>
+
+<span class="k">SET</span> <span class="n">QUOTED_IDENTIFIER</span> <span class="k">ON</span>
+
+<span class="k">SET</span> <span class="n">ANSI_PADDING</span> <span class="k">ON</span>
+
+<span class="k">CREATE</span> <span class="k">TABLE</span> <span class="n">book_category</span> <span class="p">(</span>
+  <span class="n">book_seq</span> <span class="nb">int</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">IDENTITY</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span>
+  <span class="n">category_name</span> <span class="n">nvarchar</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+  <span class="n">sort</span> <span class="nb">int</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+  <span class="n">suspend</span> <span class="nb">char</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">CONSTRAINT</span> <span class="n">DF_book_category_suspend</span> <span class="k">DEFAULT</span> <span class="p">(</span><span class="s1">'N'</span><span class="p">),</span>
+  <span class="k">CONSTRAINT</span> <span class="n">PK_book_category</span> <span class="k">PRIMARY</span> <span class="k">KEY</span> <span class="n">CLUSTERED</span> <span class="p">(</span>
+    <span class="n">book_seq</span> <span class="k">ASC</span>
+  <span class="p">),</span>
+<span class="p">);</span>
+
+<span class="k">SET</span> <span class="n">ANSI_PADDING</span> <span class="k">OFF</span>
+
+<span class="k">EXEC</span> <span class="n">sys</span><span class="p">.</span><span class="n">sp_addextendedproperty</span> <span class="o">@</span><span class="n">name</span><span class="o">=</span><span class="n">N</span><span class="s1">'MS_Description'</span><span class="p">,</span> <span class="o">@</span><span class="n">value</span><span class="o">=</span><span class="n">N</span><span class="s1">'分類'</span><span class="p">,</span> <span class="o">@</span><span class="n">level0type</span><span class="o">=</span><span class="n">N</span><span class="s1">'SCHEMA'</span><span class="p">,</span> <span class="o">@</span><span class="n">level0name</span><span class="o">=</span><span class="n">N</span><span class="s1">'dbo'</span><span class="p">,</span> <span class="o">@</span><span class="n">level1type</span><span class="o">=</span><span class="n">N</span><span class="s1">'TABLE'</span><span class="p">,</span> <span class="o">@</span><span class="n">level1name</span><span class="o">=</span><span class="n">N</span><span class="s1">'book_category'</span>
+
+<span class="k">EXEC</span> <span class="n">sys</span><span class="p">.</span><span class="n">sp_addextendedproperty</span> <span class="o">@</span><span class="n">name</span><span class="o">=</span><span class="n">N</span><span class="s1">'MS_Description'</span><span class="p">,</span> <span class="o">@</span><span class="n">value</span><span class="o">=</span><span class="n">N</span><span class="s1">'流水號'</span><span class="p">,</span> <span class="o">@</span><span class="n">level0type</span><span class="o">=</span><span class="n">N</span><span class="s1">'SCHEMA'</span><span class="p">,</span> <span class="o">@</span><span class="n">level0name</span><span class="o">=</span><span class="n">N</span><span class="s1">'dbo'</span><span class="p">,</span> <span class="o">@</span><span class="n">level1type</span><span class="o">=</span><span class="n">N</span><span class="s1">'TABLE'</span><span class="p">,</span> <span class="o">@</span><span class="n">level1name</span><span class="o">=</span><span class="n">N</span><span class="s1">'book_category'</span><span class="p">,</span> <span class="o">@</span><span class="n">level2type</span><span class="o">=</span><span class="n">N</span><span class="s1">'COLUMN'</span><span class="p">,</span> <span class="o">@</span><span class="n">level2name</span><span class="o">=</span><span class="n">N</span><span class="s1">'book_seq'</span>
+
+<span class="k">EXEC</span> <span class="n">sys</span><span class="p">.</span><span class="n">sp_addextendedproperty</span> <span class="o">@</span><span class="n">name</span><span class="o">=</span><span class="n">N</span><span class="s1">'MS_Description'</span><span class="p">,</span> <span class="o">@</span><span class="n">value</span><span class="o">=</span><span class="n">N</span><span class="s1">'排序(1-99)'</span><span class="p">,</span> <span class="o">@</span><span class="n">level0type</span><span class="o">=</span><span class="n">N</span><span class="s1">'SCHEMA'</span><span class="p">,</span> <span class="o">@</span><span class="n">level0name</span><span class="o">=</span><span class="n">N</span><span class="s1">'dbo'</span><span class="p">,</span> <span class="o">@</span><span class="n">level1type</span><span class="o">=</span><span class="n">N</span><span class="s1">'TABLE'</span><span class="p">,</span> <span class="o">@</span><span class="n">level1name</span><span class="o">=</span><span class="n">N</span><span class="s1">'book_category'</span><span class="p">,</span> <span class="o">@</span><span class="n">level2type</span><span class="o">=</span><span class="n">N</span><span class="s1">'COLUMN'</span><span class="p">,</span> <span class="o">@</span><span class="n">level2name</span><span class="o">=</span><span class="n">N</span><span class="s1">'sort'</span>
+
+<span class="k">EXEC</span> <span class="n">sys</span><span class="p">.</span><span class="n">sp_addextendedproperty</span> <span class="o">@</span><span class="n">name</span><span class="o">=</span><span class="n">N</span><span class="s1">'MS_Description'</span><span class="p">,</span> <span class="o">@</span><span class="n">value</span><span class="o">=</span><span class="n">N</span><span class="s1">'停用否'</span><span class="p">,</span> <span class="o">@</span><span class="n">level0type</span><span class="o">=</span><span class="n">N</span><span class="s1">'SCHEMA'</span><span class="p">,</span> <span class="o">@</span><span class="n">level0name</span><span class="o">=</span><span class="n">N</span><span class="s1">'dbo'</span><span class="p">,</span> <span class="o">@</span><span class="n">level1type</span><span class="o">=</span><span class="n">N</span><span class="s1">'TABLE'</span><span class="p">,</span> <span class="o">@</span><span class="n">level1name</span><span class="o">=</span><span class="n">N</span><span class="s1">'book_category'</span><span class="p">,</span> <span class="o">@</span><span class="n">level2type</span><span class="o">=</span><span class="n">N</span><span class="s1">'COLUMN'</span><span class="p">,</span> <span class="o">@</span><span class="n">level2name</span><span class="o">=</span><span class="n">N</span><span class="s1">'suspend'</span>
+
+<span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">dbo</span><span class="p">.</span><span class="n">book_category</span> <span class="p">(</span><span class="n">category_name</span><span class="p">,</span> <span class="n">sort</span><span class="p">,</span> <span class="n">suspend</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="n">N</span><span class="s1">'文學小說'</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="s1">'N'</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">dbo</span><span class="p">.</span><span class="n">book_category</span> <span class="p">(</span><span class="n">category_name</span><span class="p">,</span> <span class="n">sort</span><span class="p">,</span> <span class="n">suspend</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="n">N</span><span class="s1">'商業理財'</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="s1">'N'</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">dbo</span><span class="p">.</span><span class="n">book_category</span> <span class="p">(</span><span class="n">category_name</span><span class="p">,</span> <span class="n">sort</span><span class="p">,</span> <span class="n">suspend</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="n">N</span><span class="s1">'藝術設計'</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="s1">'N'</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">dbo</span><span class="p">.</span><span class="n">book_category</span> <span class="p">(</span><span class="n">category_name</span><span class="p">,</span> <span class="n">sort</span><span class="p">,</span> <span class="n">suspend</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="n">N</span><span class="s1">'人文史地'</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="s1">'N'</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">dbo</span><span class="p">.</span><span class="n">book_category</span> <span class="p">(</span><span class="n">category_name</span><span class="p">,</span> <span class="n">sort</span><span class="p">,</span> <span class="n">suspend</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="n">N</span><span class="s1">'社會科學'</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="s1">'N'</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">dbo</span><span class="p">.</span><span class="n">book_category</span> <span class="p">(</span><span class="n">category_name</span><span class="p">,</span> <span class="n">sort</span><span class="p">,</span> <span class="n">suspend</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="n">N</span><span class="s1">'自然科普'</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="s1">'N'</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">dbo</span><span class="p">.</span><span class="n">book_category</span> <span class="p">(</span><span class="n">category_name</span><span class="p">,</span> <span class="n">sort</span><span class="p">,</span> <span class="n">suspend</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="n">N</span><span class="s1">'心理勵志'</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="s1">'N'</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">dbo</span><span class="p">.</span><span class="n">book_category</span> <span class="p">(</span><span class="n">category_name</span><span class="p">,</span> <span class="n">sort</span><span class="p">,</span> <span class="n">suspend</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="n">N</span><span class="s1">'醫療保健'</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="s1">'N'</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">dbo</span><span class="p">.</span><span class="n">book_category</span> <span class="p">(</span><span class="n">category_name</span><span class="p">,</span> <span class="n">sort</span><span class="p">,</span> <span class="n">suspend</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="n">N</span><span class="s1">'飲食'</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="s1">'N'</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">dbo</span><span class="p">.</span><span class="n">book_category</span> <span class="p">(</span><span class="n">category_name</span><span class="p">,</span> <span class="n">sort</span><span class="p">,</span> <span class="n">suspend</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="n">N</span><span class="s1">'生活風格'</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="s1">'N'</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p><strong>說明：</strong></p>
+
+<p>本範例之檔案放置於 src/main/resources/….</p>
+
+<p><strong>• 建立測試</strong></p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@SpringBootTest</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">DatabaseTest</span> <span class="o">{</span>
+    <span class="kd">private</span> <span class="kd">static</span> <span class="nc">Logger</span> <span class="n">logger</span> <span class="o">=</span> <span class="nc">LoggerFactory</span><span class="o">.</span><span class="na">getLogger</span><span class="o">(</span><span class="nc">DatabaseTest</span><span class="o">.</span><span class="na">class</span><span class="o">);</span>
+
+    <span class="kd">static</span> <span class="nc">MSSQLServerContainer</span> <span class="n">mssqlserver</span> <span class="o">=</span> <span class="o">(</span><span class="nc">MSSQLServerContainer</span><span class="o">)</span> <span class="k">new</span> <span class="nc">MSSQLServerContainer</span><span class="o">()</span>
+        <span class="o">.</span><span class="na">withInitScript</span><span class="o">(</span><span class="s">"doc/ddl.sql"</span><span class="o">);</span>
+
+    <span class="nd">@DynamicPropertySource</span>
+    <span class="kd">static</span> <span class="kt">void</span> <span class="nf">mssqlProperties</span><span class="o">(</span><span class="nc">DynamicPropertyRegistry</span> <span class="n">registry</span><span class="o">)</span> <span class="o">{</span>
+        <span class="n">mssqlserver</span><span class="o">.</span><span class="na">start</span><span class="o">();</span>
+        <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.datasource.driver-class-name"</span><span class="o">,</span> <span class="nl">mssqlserver:</span><span class="o">:</span><span class="n">getDriverClassName</span><span class="o">);</span>
+        <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.datasource.url"</span><span class="o">,</span> <span class="o">()</span> <span class="o">-&gt;</span> <span class="n">mssqlserver</span><span class="o">.</span><span class="na">getJdbcUrl</span><span class="o">());</span>
+        <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.datasource.username"</span><span class="o">,</span> <span class="nl">mssqlserver:</span><span class="o">:</span><span class="n">getUsername</span><span class="o">);</span>
+        <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.datasource.password"</span><span class="o">,</span> <span class="nl">mssqlserver:</span><span class="o">:</span><span class="n">getPassword</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Autowired</span>
+    <span class="kd">private</span> <span class="nc">BookCategoryRepository</span> <span class="n">bookCategoryRepository</span><span class="o">;</span>
+
+    <span class="nd">@Test</span>
+    <span class="kt">void</span> <span class="nf">testBookCategoryListSizeIs10</span><span class="o">()</span> <span class="o">{</span>
+        <span class="nc">List</span><span class="o">&lt;</span><span class="nc">BookCategory</span><span class="o">&gt;</span> <span class="n">bookCategoryList</span> <span class="o">=</span> <span class="n">bookCategoryRepository</span><span class="o">.</span><span class="na">findAll</span><span class="o">();</span>
+        <span class="n">assertEquals</span><span class="o">(</span><span class="mi">10</span><span class="o">,</span> <span class="n">bookCategoryList</span><span class="o">.</span><span class="na">size</span><span class="o">());</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p><strong>說明：</strong></p>
+
+<p>5: 實例化 MSSQL SERVER Containers 並指定初始化資料庫的 Script 檔案，本範例會建立 book_category 資料表並寫入 10 筆資料。</p>
+
+<p>8-15: 啟動 MSSQL SERVER Container，並動態指定設定檔參數。</p>
+
+<p>20-24: 驗證可否從 book_category 資料表取出 10 筆資料。</p>
+
+<p><strong>• 執行測試</strong></p>
+
+<p><strong>[啟動容器]</strong></p>
+
+<div><img src="/images/testcontainers/mssql/startup.png" width="800" height="150" alt="" /></div>
+
+<p><strong>[測試結果]</strong></p>
+
+<div><img src="/images/testcontainers/mssql/run-test.png" width="800" height="150" alt="" /></div>
+
+<h2 id="︎-實際演練-redis"><strong>▶︎</strong> <strong>實際演練-Redis</strong></h2>
+
+<p>建置 Spring Boot 2 專案，並引用 Redis 依賴，這裡在本地環境不去安裝及建立 Redis，而是使用 TestContainers 協助建立 Redis Container 進行整合測試。</p>
+
+<p><strong>• Maven 依賴</strong></p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">&lt;!-- spring data redis --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.springframework.boot<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>spring-boot-starter-data-redis<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="c">&lt;!-- test - testcontainers --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.testcontainers<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>testcontainers<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;version&gt;</span>1.14.3<span class="nt">&lt;/version&gt;</span>
+    <span class="nt">&lt;scope&gt;</span>test<span class="nt">&lt;/scope&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</code></pre></div></div>
+
+<p><strong>• Redis 配置</strong></p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Configuration</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">RedisConfiguration</span> <span class="o">{</span>
+    <span class="nd">@Bean</span>
+    <span class="kd">public</span> <span class="nc">RedisTemplate</span> <span class="nf">redisTemplate</span><span class="o">(</span><span class="nc">RedisConnectionFactory</span> <span class="n">connectionFactory</span><span class="o">)</span> <span class="o">{</span>
+        <span class="nc">RedisTemplate</span> <span class="n">redisTemplate</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">RedisTemplate</span><span class="o">();</span>
+        <span class="n">redisTemplate</span><span class="o">.</span><span class="na">setKeySerializer</span><span class="o">(</span><span class="k">new</span> <span class="nc">StringRedisSerializer</span><span class="o">());</span>
+        <span class="n">redisTemplate</span><span class="o">.</span><span class="na">setValueSerializer</span><span class="o">(</span><span class="k">new</span> <span class="nc">GenericJackson2JsonRedisSerializer</span><span class="o">());</span>
+        <span class="n">redisTemplate</span><span class="o">.</span><span class="na">setHashKeySerializer</span><span class="o">(</span><span class="k">new</span> <span class="nc">StringRedisSerializer</span><span class="o">());</span>
+        <span class="n">redisTemplate</span><span class="o">.</span><span class="na">setConnectionFactory</span><span class="o">(</span><span class="n">connectionFactory</span><span class="o">);</span>
+        <span class="k">return</span> <span class="n">redisTemplate</span><span class="o">;</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p><strong>說明：</strong></p>
+
+<p>配置 RedisTemplate 並指定實作之 Serializer（也可依據需求使用客製化的 Serializer），當使用 RedisTemplate 將資料寫入 Redis 時，會根據指定 Serializer 進行處理，如此一來則無需在每個物件中實作序列化。</p>
+
+<p><strong>• 建立測試</strong></p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@SpringBootTest</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">RedisTest</span> <span class="o">{</span>
+    <span class="kd">private</span> <span class="kd">static</span> <span class="nc">Logger</span> <span class="n">logger</span> <span class="o">=</span> <span class="nc">LoggerFactory</span><span class="o">.</span><span class="na">getLogger</span><span class="o">(</span><span class="nc">RedisTest</span><span class="o">.</span><span class="na">class</span><span class="o">);</span>
+
+    <span class="kd">static</span> <span class="nc">GenericContainer</span> <span class="n">redis</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">GenericContainer</span><span class="o">(</span><span class="s">"redis:5.0.5"</span><span class="o">)</span>
+        <span class="o">.</span><span class="na">withExposedPorts</span><span class="o">(</span><span class="mi">6379</span><span class="o">);</span>
+
+    <span class="nd">@DynamicPropertySource</span>
+    <span class="kd">static</span> <span class="kt">void</span> <span class="nf">redisProperties</span><span class="o">(</span><span class="nc">DynamicPropertyRegistry</span> <span class="n">registry</span><span class="o">)</span> <span class="o">{</span>
+        <span class="n">redis</span><span class="o">.</span><span class="na">start</span><span class="o">();</span>
+        <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.redis.host"</span><span class="o">,</span> <span class="nl">redis:</span><span class="o">:</span><span class="n">getContainerIpAddress</span><span class="o">);</span>
+        <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.redis.port"</span><span class="o">,</span> <span class="nl">redis:</span><span class="o">:</span><span class="n">getFirstMappedPort</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Autowired</span>
+    <span class="kd">private</span> <span class="nc">RedisTemplate</span> <span class="n">redisTemplate</span><span class="o">;</span>
+
+    <span class="nd">@Test</span>
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">testSetAndGetWithString</span><span class="o">()</span> <span class="o">{</span>
+        <span class="n">redisTemplate</span><span class="o">.</span><span class="na">opsForValue</span><span class="o">().</span><span class="na">set</span><span class="o">(</span><span class="s">"k1"</span><span class="o">,</span> <span class="s">"v1"</span><span class="o">);</span>
+        <span class="n">assertEquals</span><span class="o">(</span><span class="s">"v1"</span><span class="o">,</span> <span class="n">redisTemplate</span><span class="o">.</span><span class="na">opsForValue</span><span class="o">().</span><span class="na">get</span><span class="o">(</span><span class="s">"k1"</span><span class="o">));</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Test</span>
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">testSetAndGetWithObject</span><span class="o">()</span> <span class="o">{</span>
+        <span class="nc">BookCategory</span> <span class="n">bookCategory</span> <span class="o">=</span> <span class="nc">BookCategory</span><span class="o">.</span><span class="na">createBookCategory</span><span class="o">(</span><span class="s">"生活風格"</span><span class="o">,</span> <span class="mi">10</span><span class="o">);</span>
+        <span class="n">redisTemplate</span><span class="o">.</span><span class="na">opsForValue</span><span class="o">().</span><span class="na">set</span><span class="o">(</span><span class="s">"k2"</span><span class="o">,</span> <span class="n">bookCategory</span><span class="o">);</span>
+        <span class="nc">String</span> <span class="n">categoryName</span> <span class="o">=</span> <span class="o">((</span><span class="nc">BookCategory</span><span class="o">)</span> <span class="n">redisTemplate</span><span class="o">.</span><span class="na">opsForValue</span><span class="o">().</span><span class="na">get</span><span class="o">(</span><span class="s">"k2"</span><span class="o">)).</span><span class="na">getCategoryName</span><span class="o">();</span>
+        <span class="n">assertEquals</span><span class="o">(</span><span class="s">"生活風格"</span><span class="o">,</span> <span class="n">categoryName</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="nd">@After</span>
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">destory</span><span class="o">()</span> <span class="o">{</span>
+        <span class="n">redis</span><span class="o">.</span><span class="na">stop</span><span class="o">();</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p><strong>說明：</strong></p>
+
+<p>5: 實例化 Redis Container，這裡使用的是 GenericContainer，可以透過這個物件傳入客製化的 Image Name，增加測試容器的彈性。</p>
+
+<p>8-13: 啟動 Redis Container，並動態指定設定檔參數。</p>
+
+<p>18-22: 驗證從 Redis 寫入/取出字串資料的正確性。</p>
+
+<p>24-30: 驗證從 Redis 寫入/取出物件資料的正確性。</p>
+
+<p><strong>• 執行測試</strong></p>
+
+<p><strong>[啟動容器]</strong></p>
+
+<div><img src="/images/testcontainers/redis/startup.png" width="800" height="150" alt="" /></div>
+
+<p><strong>[測試結果-1]</strong></p>
+
+<div><img src="/images/testcontainers/redis/run-test1.png" width="800" height="150" alt="" /></div>
+
+<p><strong>[測試結果-2]</strong></p>
+
+<div><img src="/images/testcontainers/redis/run-test2.png" width="800" height="150" alt="" /></div>
+
+<h1 id="實際演練心得"><strong>實際演練心得</strong></h1>
+
+<p>單單就 Kafka、Redis、RDBMS 的情境分別實作的過程來說，透過 TestContainers 簡化了許多步驟，也無端口衝突的問題，當然可以想像在較為複雜的專案情境中一定會遇到一些不可預期的狀況。</p>
+
+<p><strong>容器化的整合測試方案並非完全沒有缺點</strong>，實際操作發現以下問題：</p>
+
+<ol>
+  <li>
+    <p>每個測試都會啟用 Docker Container，也因此<strong>花費時間較長</strong>（自動部署運行自動化測試花費時間亦會有此問題），這部分則可以採用<strong>並行化測試</strong>來解決。</p>
+  </li>
+  <li>
+    <p>需要進行<strong>額外的配置工作</strong>，像是針對初始化資料庫，本篇文章使用的是 MSSQL，而 Testcontainer 的 MSSQL 的解析實作上會擋掉某些語句，因此就必須要花費一些時間測試資料初始化的 Script。</p>
+  </li>
+</ol>
+
+<p>然而整體來說，相較於每次都要部署到測試環境進行驗證，即便是使用自動化部署，部署上去版本難免還是可能發生不可預期狀況（例如推送失敗、合併問題等等），因此容器化整合測試我覺得是值得嘗試的一個解決方案。</p>
+
+<p>有任何問題，歡迎聯繫討論，謝謝~!</p>
+
+<hr />
+
+<p>References:</p>
+
+<ul>
+  <li><strong><a href="https://www.testcontainers.org/">官方文檔</a></strong></li>
+  <li><strong><a href="https://reflectoring.io/spring-boot-flyway-testcontainers/">好文章，說明了資料庫整合測試的問題以及為何我們需要使用 TestContainer</a></strong></li>
+  <li><strong><a href="https://github.com/testcontainers/testcontainers-spring-boot">好資源，提供全面的範例及使用說明，讓你知道在不同情境下如何使用 Testcontainer</a></strong></li>
+  <li><strong><a href="https://piotrminkowski.com/2019/10/09/part-1-testing-kafka-microservices-with-micronaut/">好範例，Spring Boot TestContainers With Kafka</a></strong></li>
+</ul>
+:ET
