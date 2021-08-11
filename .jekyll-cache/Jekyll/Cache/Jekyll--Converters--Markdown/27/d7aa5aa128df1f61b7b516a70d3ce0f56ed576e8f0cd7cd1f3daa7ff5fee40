@@ -1,0 +1,308 @@
+I"�O<p><strong>前言</strong></p>
+
+<p>本文著重於使用 Mockito 測試框架協助撰寫單元測試(Unit Test)，整合測試(Integration Test)也相當重要，關於單元測試及整合測試各自特性並不在本文討論的範圍內，本文期許藉由簡單的範例來認識 Mockito，提高開發者對於這一區塊的關注及討論程度。</p>
+
+<p><strong>Mock 種類</strong></p>
+
+<p>在正式開始進入主題之前，需要先對 Test Double 有些許概念，由於在 Mockito 中將大部分的 Test Doubles 都以 Mock 取代之，而 Test Doubles 並非只有 Mock 一種而已，以下則開始針對 Test Double 做個說明。</p>
+
+<p>• Dummy</p>
+
+<p>不包含實作的物件(包含 NULL），目的為在測試中傳入但是實際不會被使用到的物件，使之成功編譯。</p>
+
+<p>• Stub</p>
+
+<p>當你的 SUT 有依賴 DOC 時，用來替代真實 DOC 的物件，並且指定測試過程的回傳值。</p>
+
+<p>• Mock</p>
+
+<p>建立一個完全模擬的物件，與 Stub 不同的是，Stub 提供你的測試案例回傳值，Mock 則關注『驗證行為』。</p>
+
+<p>• Spy</p>
+
+<p>可以『記錄』並『驗證』與待測對象互動的行為，與 Mock 類似但是 Mockito 中 Spy 物件並不是 Mock 物件，Spy 所創建的是真實的物件。</p>
+
+<p>• Fake</p>
+
+<p>通常為自行實作並且僅用於替代 Production 環境中的輕量化物件，舉個例子：In-memory database。</p>
+
+<p><strong>Mockito ?</strong></p>
+
+<p>很廣泛被使用的測試框架，尤其能夠很容易的處理依賴注入的情境，對於使用 Spring Framework 的開發者來說，用來搭配撰寫 Unit Test 相對有幫助，當開發者遇到依賴注入情境時往往會直接使用『實際物件』來進行測試，而事實上這樣的操作是再進行 Integration Test，並非 Unit Test。另外 Mockito 也扮演著協助開發者能夠更容易地處理並且建構各式 Test Double 來進行 Unit Test。</p>
+
+<p><strong>演示範例</strong></p>
+
+<p>本例關注在 Mockito 的各種測試，在此則不特地引用 Spring 以及任何 ORM 相關框架。</p>
+
+<p>• Project：專案結構。</p>
+
+<div><img src="/images/mockito/project.png" width="800" height="150" alt="" /></div>
+
+<p>• Maven Dependency： (在此範例中使用 Junit 5)。</p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code>        <span class="nt">&lt;dependency&gt;</span>
+            <span class="nt">&lt;groupId&gt;</span>org.mockito<span class="nt">&lt;/groupId&gt;</span>
+            <span class="nt">&lt;artifactId&gt;</span>mockito-core<span class="nt">&lt;/artifactId&gt;</span>
+            <span class="nt">&lt;version&gt;</span>2.23.0<span class="nt">&lt;/version&gt;</span>
+            <span class="nt">&lt;scope&gt;</span>test<span class="nt">&lt;/scope&gt;</span>
+        <span class="nt">&lt;/dependency&gt;</span>
+        <span class="nt">&lt;dependency&gt;</span>
+            <span class="nt">&lt;groupId&gt;</span>org.mockito<span class="nt">&lt;/groupId&gt;</span>
+            <span class="nt">&lt;artifactId&gt;</span>mockito-junit-jupiter<span class="nt">&lt;/artifactId&gt;</span>
+            <span class="nt">&lt;version&gt;</span>2.23.0<span class="nt">&lt;/version&gt;</span>
+            <span class="nt">&lt;scope&gt;</span>test<span class="nt">&lt;/scope&gt;</span>
+        <span class="nt">&lt;/dependency&gt;</span>
+</code></pre></div></div>
+
+<p>• Service：呼叫 Repository 與資料庫進行交互取得資訊。</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">package</span> <span class="nn">service.jpa</span><span class="o">;</span>
+
+<span class="kn">import</span> <span class="nn">model.Custom</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">repository.CustomRepository</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">service.ICustomJpaService</span><span class="o">;</span>
+
+<span class="kn">import</span> <span class="nn">java.util.HashSet</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">java.util.Set</span><span class="o">;</span>
+
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">CustomJpaService</span> <span class="kd">implements</span> <span class="nc">ICustomJpaService</span> <span class="o">{</span>
+    <span class="kd">private</span> <span class="nc">CustomRepository</span> <span class="n">customRepository</span><span class="o">;</span>
+
+    <span class="kd">public</span> <span class="nf">CustomJpaService</span><span class="o">(</span><span class="nc">CustomRepository</span> <span class="n">customRepository</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">customRepository</span> <span class="o">=</span> <span class="n">customRepository</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Override</span>
+    <span class="kd">public</span> <span class="nc">Set</span><span class="o">&lt;</span><span class="nc">Custom</span><span class="o">&gt;</span> <span class="nf">findAll</span><span class="o">()</span> <span class="o">{</span>
+        <span class="nc">Set</span><span class="o">&lt;</span><span class="nc">Custom</span><span class="o">&gt;</span> <span class="n">customs</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">HashSet</span><span class="o">&lt;&gt;();</span>
+        <span class="n">customRepository</span><span class="o">.</span><span class="na">findAll</span><span class="o">().</span><span class="na">forEach</span><span class="o">(</span><span class="nl">customs:</span><span class="o">:</span><span class="n">add</span><span class="o">);</span>
+        <span class="k">return</span> <span class="n">customs</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Override</span>
+    <span class="kd">public</span> <span class="nc">Custom</span> <span class="nf">findById</span><span class="o">(</span><span class="nc">Long</span> <span class="n">aLong</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="n">customRepository</span><span class="o">.</span><span class="na">findById</span><span class="o">(</span><span class="n">aLong</span><span class="o">).</span><span class="na">orElse</span><span class="o">(</span><span class="kc">null</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Override</span>
+    <span class="kd">public</span> <span class="nc">Custom</span> <span class="nf">save</span><span class="o">(</span><span class="nc">Custom</span> <span class="n">object</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="n">customRepository</span><span class="o">.</span><span class="na">save</span><span class="o">(</span><span class="n">object</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Override</span>
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">delete</span><span class="o">(</span><span class="nc">Custom</span> <span class="n">object</span><span class="o">)</span> <span class="o">{</span>
+        <span class="n">customRepository</span><span class="o">.</span><span class="na">delete</span><span class="o">(</span><span class="n">object</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="nd">@Override</span>
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">deleteById</span><span class="o">(</span><span class="nc">Long</span> <span class="n">aLong</span><span class="o">)</span> <span class="o">{</span>
+        <span class="n">customRepository</span><span class="o">.</span><span class="na">deleteById</span><span class="o">(</span><span class="n">aLong</span><span class="o">);</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>• Repository：與資料庫溝通取得資料(這裡模擬 Spring Data Jpa 的行為，並無實際引用該框架)。</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">package</span> <span class="nn">repository</span><span class="o">;</span>
+
+<span class="kn">import</span> <span class="nn">model.Custom</span><span class="o">;</span>
+
+<span class="kd">public</span> <span class="kd">interface</span> <span class="nc">CustomRepository</span> <span class="kd">extends</span> <span class="nc">CrudRepository</span><span class="o">&lt;</span><span class="nc">Custom</span><span class="o">,</span> <span class="nc">Long</span><span class="o">&gt;</span> <span class="o">{</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>• Model：即 Entity。</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">package</span> <span class="nn">model</span><span class="o">;</span>
+
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">Custom</span> <span class="kd">extends</span> <span class="nc">BaseEntity</span><span class="o">{</span>
+    <span class="kd">private</span> <span class="nc">Long</span> <span class="n">id</span><span class="o">;</span>
+    <span class="kd">private</span> <span class="nc">String</span> <span class="n">name</span><span class="o">;</span>
+    <span class="kd">private</span> <span class="nc">String</span> <span class="n">email</span><span class="o">;</span>
+
+    <span class="kd">public</span> <span class="nf">Custom</span><span class="o">(</span><span class="nc">Long</span> <span class="n">id</span><span class="o">,</span> <span class="nc">String</span> <span class="n">name</span><span class="o">,</span> <span class="nc">String</span> <span class="n">email</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">id</span> <span class="o">=</span> <span class="n">id</span><span class="o">;</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">name</span> <span class="o">=</span> <span class="n">name</span><span class="o">;</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">email</span> <span class="o">=</span> <span class="n">email</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="nc">Long</span> <span class="nf">getId</span><span class="o">()</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="n">id</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="nc">String</span> <span class="nf">getName</span><span class="o">()</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="n">name</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="nc">String</span> <span class="nf">getEmail</span><span class="o">()</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="n">email</span><span class="o">;</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p><strong>撰寫 Unit Test By Mockito</strong></p>
+
+<p>針對 CustomJpaService 撰寫測試。</p>
+
+<p>• Inject Mocks</p>
+
+<p>此例中 Service 呼叫其依賴項目 Repository 取得或異動資料庫資訊，這裡關注待測物件 Service 呼叫方法執行時是否符合預期結果，因此我們需要對其依賴(Repository)進行 Mocks。</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">package</span> <span class="nn">service.jpa</span><span class="o">;</span>
+
+<span class="kn">import</span> <span class="nn">model.Custom</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">org.junit.jupiter.api.Test</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">org.junit.jupiter.api.extension.ExtendWith</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">org.mockito.InjectMocks</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">org.mockito.Mock</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">org.mockito.junit.jupiter.MockitoExtension</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">repository.CustomRepository</span><span class="o">;</span>
+
+<span class="nd">@ExtendWith</span><span class="o">(</span><span class="nc">MockitoExtension</span><span class="o">.</span><span class="na">class</span><span class="o">)</span>
+<span class="kd">class</span> <span class="nc">CustomJpaServiceTest</span> <span class="o">{</span>
+    <span class="nd">@Mock</span>
+    <span class="nc">CustomRepository</span> <span class="n">customRepository</span><span class="o">;</span>
+
+    <span class="nd">@InjectMocks</span>
+    <span class="nc">CustomJpaService</span> <span class="n">customJpaService</span><span class="o">;</span>
+
+    <span class="nd">@Test</span>
+    <span class="kt">void</span> <span class="nf">delete</span><span class="o">()</span> <span class="o">{</span>
+        <span class="n">customJpaService</span><span class="o">.</span><span class="na">delete</span><span class="o">(</span><span class="k">new</span> <span class="nc">Custom</span><span class="o">(</span><span class="mi">1</span><span class="n">l</span><span class="o">,</span> <span class="s">"Adele"</span><span class="o">,</span> <span class="s">"adele@gmail.com"</span><span class="o">));</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>說明：</p>
+
+<p>line 11 @ExtendWith: JUnit 5 提供拓展點的架構，利用此 Annotation 提供拓展性，讓第三方也能夠實現 JUnit Jupiter API，在此我們則使用 Mockito Extention。</p>
+
+<p>line 13 @Mock: 建立 Mock 物件。</p>
+
+<p>line 16 @InjectMocks: 注入 Mock 物件。</p>
+
+<p>line 19 定義測試</p>
+
+<p>line 23 執行待測物件</p>
+
+<p>在 Debug 模式下進行檢查，可以看到 CustomRepository 成功地被 Mock 並且注入到 CustomJpaService。</p>
+
+<div><img src="/images/mockito/inject-mock1.png" width="800" height="150" alt="" /></div>
+
+<p>測試結果：Pass。</p>
+
+<div><img src="/images/mockito/inject-mock2.png" width="800" height="150" alt="" /></div>
+
+<p>• Verify Mocks</p>
+
+<p>目的為驗證 Mock 物件被執行呼叫的情況是否符合預期結果。</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code>    <span class="nd">@Test</span>
+    <span class="kt">void</span> <span class="nf">deleteById</span><span class="o">()</span> <span class="o">{</span>
+        <span class="n">customJpaService</span><span class="o">.</span><span class="na">deleteById</span><span class="o">(</span><span class="mi">1</span><span class="n">l</span><span class="o">);</span>
+        <span class="n">verify</span><span class="o">(</span><span class="n">customRepository</span><span class="o">,</span> <span class="n">times</span><span class="o">(</span><span class="mi">1</span><span class="o">)).</span><span class="na">deleteById</span><span class="o">(</span><span class="mi">1</span><span class="n">l</span><span class="o">);</span>
+    <span class="o">}</span>
+</code></pre></div></div>
+
+<p>說明：</p>
+
+<p>line 4 驗證待測物件 customJpaService 呼叫 deleteById 時，Mock 物件 customRepository 被執行了幾次，times(1)表示被呼叫執行了一次，verify 預設行為是 times(1)，在此為了演示所以沒有省略。</p>
+
+<p>測試結果：Pass。</p>
+
+<div><img src="/images/mockito/verify-mock.png" width="800" height="150" alt="" /></div>
+
+<p>• Mocks 回傳值</p>
+
+<p>目的為依據測試情境預先定義 Mock 回傳值。</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code>    <span class="nd">@Test</span>
+    <span class="kt">void</span> <span class="nf">findAll</span><span class="o">()</span> <span class="o">{</span>
+        <span class="nc">Set</span><span class="o">&lt;</span><span class="nc">Custom</span><span class="o">&gt;</span> <span class="n">customSet</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">HashSet</span><span class="o">&lt;&gt;();</span>
+
+        <span class="n">when</span><span class="o">(</span><span class="n">customRepository</span><span class="o">.</span><span class="na">findAll</span><span class="o">()).</span><span class="na">thenReturn</span><span class="o">(</span><span class="n">customSet</span><span class="o">);</span>
+
+        <span class="nc">Set</span><span class="o">&lt;</span><span class="nc">Custom</span><span class="o">&gt;</span> <span class="n">returnCustomSet</span> <span class="o">=</span> <span class="n">customJpaService</span><span class="o">.</span><span class="na">findAll</span><span class="o">();</span>
+
+        <span class="n">assertThat</span><span class="o">(</span><span class="n">returnCustomSet</span><span class="o">).</span><span class="na">isNotNull</span><span class="o">();</span>
+
+        <span class="n">verify</span><span class="o">(</span><span class="n">customRepository</span><span class="o">).</span><span class="na">findAll</span><span class="o">();</span>
+    <span class="o">}</span>
+</code></pre></div></div>
+
+<p>說明：</p>
+
+<p>line 3 定義回傳物件。</p>
+
+<p>line 5 指定 Mock 物件回傳值，當 customRepository 呼叫 findAll()，則回傳 line 37 定義的物件。</p>
+
+<p>line 7 執行待測物件的呼叫。</p>
+
+<p>line 9 驗證回傳值結果，這裡使用 assertj 進行斷言。</p>
+
+<p>line 11 如同上一個 topic 所提及之 Verify Mocks 的驗證行為。</p>
+
+<p>測試結果：Pass。</p>
+
+<div><img src="/images/mockito/mock-return.png" width="800" height="150" alt="" /></div>
+
+<p>• Argument Machers</p>
+
+<p>目的為驗證 Mock 物件的參數是否符合預期。</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code>    <span class="nd">@Test</span>
+    <span class="kt">void</span> <span class="nf">testArgumentMatcherByDelete</span><span class="o">()</span> <span class="o">{</span>
+        <span class="nc">Custom</span> <span class="n">custom</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Custom</span><span class="o">(</span><span class="mi">1</span><span class="n">l</span><span class="o">,</span> <span class="s">"Adele"</span><span class="o">,</span> <span class="s">"adele@gmail.com"</span><span class="o">);</span>
+
+        <span class="n">customJpaService</span><span class="o">.</span><span class="na">delete</span><span class="o">(</span><span class="n">custom</span><span class="o">);</span>
+
+        <span class="n">verify</span><span class="o">(</span><span class="n">customRepository</span><span class="o">).</span><span class="na">delete</span><span class="o">(</span><span class="n">any</span><span class="o">(</span><span class="nc">Custom</span><span class="o">.</span><span class="na">class</span><span class="o">));</span>
+    <span class="o">}</span>
+</code></pre></div></div>
+
+<p>說明：</p>
+
+<p>此例使用 any(Class<T> type)，並指定傳入參數必須要是 Custom 的類型，Mockito 提供了非常多的參數驗證類型，依據各種需求選擇合適的方法即可。</T></p>
+
+<p>以下列出可使用的方法：</p>
+
+<div><img src="/images/mockito/argument-machers1.png" width="800" height="150" alt="" /></div>
+
+<p>測試結果：Pass。</p>
+
+<div><img src="/images/mockito/argument-machers2.png" width="800" height="150" alt="" /></div>
+
+<p><strong>本篇重點</strong></p>
+
+<ol>
+  <li>
+    <p>認識 Mock 種類</p>
+  </li>
+  <li>
+    <p>Maven 配置使用 Mockito</p>
+  </li>
+  <li>
+    <p>各項 Annotation 使用</p>
+  </li>
+</ol>
+
+<p>• @ExtendWith</p>
+
+<p>• @Mock</p>
+
+<p>• @InjectMocks</p>
+
+<ol>
+  <li>Mockito 實際案例</li>
+</ol>
+
+<p>• 如何實現 Dependency Inject</p>
+
+<p>• Verify</p>
+
+<p>• Return Value</p>
+
+<p>• Argument Machers</p>
+
+<p>Mockito Unit Test 的介紹及實作至此，日後有機會再接著分享 Mockito BDD Style。</p>
+:ET
