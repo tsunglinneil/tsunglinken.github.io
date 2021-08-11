@@ -3,8 +3,8 @@
     {
       "title"    : "資料庫也能做版控!? Flyway使資料庫遷移更容易",
       "category" : "",
-      "tags"     : "flyway, flywaydb, migration, database, and spring boot",
-      "url"      : "/2021/05/06/%E8%B3%87%E6%96%99%E5%BA%AB%E4%B9%9F%E8%83%BD%E5%81%9A%E7%89%88%E6%8E%A7!-Flyway%E4%BD%BF%E8%B3%87%E6%96%99%E5%BA%AB%E9%81%B7%E7%A7%BB%E6%9B%B4%E5%AE%B9%E6%98%93/",
+      "tags"     : "flyway, flywaydb, migration, database, and spring-boot",
+      "url"      : "http://localhost:4000/2021/05/06/%E8%B3%87%E6%96%99%E5%BA%AB%E4%B9%9F%E8%83%BD%E5%81%9A%E7%89%88%E6%8E%A7!-Flyway%E4%BD%BF%E8%B3%87%E6%96%99%E5%BA%AB%E9%81%B7%E7%A7%BB%E6%9B%B4%E5%AE%B9%E6%98%93/",
       "date"     : "6 May, 2021"
     } ,
   
@@ -12,7 +12,7 @@
       "title"    : "Testcontainers整合測試實務",
       "category" : "",
       "tags"     : "docker, containers, testcontainers, kafka, redis, rdbms, nosql, integrationtest, springboot, and 整合測試",
-      "url"      : "/2020/08/04/Testcontainers%E6%95%B4%E5%90%88%E6%B8%AC%E8%A9%A6%E5%AF%A6%E5%8B%99/",
+      "url"      : "http://localhost:4000/2020/08/04/Testcontainers%E6%95%B4%E5%90%88%E6%B8%AC%E8%A9%A6%E5%AF%A6%E5%8B%99/",
       "date"     : "4 Aug, 2020"
     } ,
   
@@ -20,7 +20,7 @@
       "title"    : "優雅的模擬測試框架Mockito介紹",
       "category" : "",
       "tags"     : "Mockito and Unit Test",
-      "url"      : "/2019/07/30/%E5%84%AA%E9%9B%85%E7%9A%84%E6%A8%A1%E6%93%AC%E6%B8%AC%E8%A9%A6%E6%A1%86%E6%9E%B6Mockito%E4%BB%8B%E7%B4%B9/",
+      "url"      : "http://localhost:4000/2019/07/30/%E5%84%AA%E9%9B%85%E7%9A%84%E6%A8%A1%E6%93%AC%E6%B8%AC%E8%A9%A6%E6%A1%86%E6%9E%B6Mockito%E4%BB%8B%E7%B4%B9/",
       "date"     : "30 Jul, 2019"
     } 
   
