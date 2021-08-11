@@ -1,4 +1,4 @@
-I"�O<p><strong>前言</strong></p>
+I"kP<p><strong>前言</strong></p>
 
 <p>本文著重於使用 Mockito 測試框架協助撰寫單元測試(Unit Test)，整合測試(Integration Test)也相當重要，關於單元測試及整合測試各自特性並不在本文討論的範圍內，本文期許藉由簡單的範例來認識 Mockito，提高開發者對於這一區塊的關注及討論程度。</p>
 
@@ -305,4 +305,8 @@
 <p>• Argument Machers</p>
 
 <p>Mockito Unit Test 的介紹及實作至此，日後有機會再接著分享 Mockito BDD Style。</p>
+
+<hr />
+
+<div><a href="https://www.tpisoftware.com/tpu/articleDetails/1294" target="_blank">本人為原文作者，同步發布於此</a></div>
 :ET

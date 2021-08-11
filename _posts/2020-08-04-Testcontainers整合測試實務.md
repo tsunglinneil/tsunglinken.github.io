@@ -667,6 +667,10 @@ public class RedisTest {
 
 ---
 
+<div><a href="https://www.tpisoftware.com/tpu/articleDetails/1997" target="_blank">本人為原文作者，同步發布於此</a></div>
+
+---
+
 References:
 
 - **[官方文檔](https://www.testcontainers.org/)**
