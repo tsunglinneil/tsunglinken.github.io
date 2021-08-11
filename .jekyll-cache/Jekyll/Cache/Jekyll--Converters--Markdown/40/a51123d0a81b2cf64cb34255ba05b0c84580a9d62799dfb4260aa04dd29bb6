@@ -1,0 +1,510 @@
+I"ԅ<p>Flyway 是一套開源數據庫遷移工具，能夠做到資料庫的版本管理，並即時的完成資料遷移作業。</p>
+
+<p>本文將在 20 分鐘內，透過 2 個觀念建立、3 個實際用例，帶你明白 Flyway 是什麼，並彙整 3 步驟實踐資料庫版控、4 步驟立即導入既有專案中。</p>
+
+<h2 id="本文架構"><strong>本文架構</strong></h2>
+
+<div><img src="/images/flyway/agenda.jpg" width="800" height="150" alt="" /></div>
+
+<h2 id="首先為何需要資料庫遷移"><strong>首先，為何需要資料庫遷移?</strong></h2>
+
+<p>在 Flyway 中，任何對資料庫進行的異動都稱為 Migration(遷移)</p>
+
+<p>在開發新專案、維護既有系統、處理各式 CR 的開發週期中，面對各種不同狀況，勢必會變更到資料庫的設計，例如: 異動欄位、索引變更等等…</p>
+
+<p>而上述這些異動也都將由不同的開發人員進行，通常會需要將異動統一進行維護，以利開發週期各個階段執行。</p>
+
+<p>在實務上，不同開發人員、多個環境，此時手動執行資料庫的異動將可能出現如下狀況</p>
+
+<ol>
+  <li>線上問題修復的資料庫異動沒有同步到各個測試環境</li>
+  <li>更新版本尚未預先執行異動腳本導致出錯</li>
+  <li>異動腳本指令錯誤並未被及時發現</li>
+</ol>
+
+<p>要減少上述問題，我們希望能夠實現下列事項：</p>
+
+<ol>
+  <li>有效追蹤資料庫異動歷程。</li>
+  <li>各個環境的資料庫異動不必手動執行，降低錯誤率。</li>
+  <li>每次程式進行更版時能夠立即執行 DDL &amp; DML 變更。</li>
+</ol>
+
+<p>為了達到上述目標，我們將使用 Flyway 來替我們實現。</p>
+
+<h2 id="flyway-資料庫遷移運作方式"><strong>Flyway 資料庫遷移運作方式？</strong></h2>
+
+<h3 id="-基本運作原理">❖ 基本運作原理</h3>
+
+<p><strong>❶ 透過歷史紀錄表 (flyway_schema_history) 紀錄每一次的資料庫異動</strong></p>
+
+<p>Flyway 首先會檢查資料庫使否有此紀錄表 (flyway_schema_history) ，若沒有則會優先建立此表，接著針對需要被執行的 SQL 檔案，會先計算出 checksum 作為驗證，於每次 Flyway 啟動時根據 checksum 驗證資料庫是否需要被更改。</p>
+
+<p>備註：checksum 計算採用 crc-32 checksum。</p>
+
+<p><strong>❷ 透過 SQL 或 Java 編寫 DDL/DML，並定義其版號使 Flyway 進行掃描並執行</strong></p>
+
+<p>Flyway 將可設定執行順序，預設依據版號進行排序執行，並且寫入歷史紀錄表 (flyway_schema_history) ，Flyway 提供多種 Migration 的方式，以下將針對 Migration 的類型、實作做更詳細的介紹。</p>
+
+<h3 id="-遷移的類型">❖ 遷移的類型</h3>
+
+<p><strong>❶ Versioned Migrations（版本遷移）</strong></p>
+
+<p>用於創建、更新、刪除：表、索引、外鍵。</p>
+
+<p><strong>❷ Undo Migrations（撤銷遷移）</strong></p>
+
+<p>即為 Versioned Migratios 的回滾機制。</p>
+
+<p><strong>❸ Repeatable Migrations（重複遷移）</strong></p>
+
+<p>用於建立 views/procedures/functions/packages/…以及批次寫入特定數據。</p>
+
+<h3 id="-遷移的實作">❖ 遷移的實作</h3>
+
+<p><strong>❶ SQL-based migrations</strong></p>
+
+<p>這是最常使用也最便利的實作方式，主要用於實作 DDL 的變更及簡單的資料異動。</p>
+
+<p>命名規則: (擷取官方圖片)</p>
+
+<div><img src="/images/flyway/sql-migration1.png" width="800" height="150" alt="" /></div>
+
+<p><strong>❷ Java-based migrations</strong></p>
+
+<p>實作情境用於 BLOB &amp; CLOB 的變更以及較為複雜的資料異動。</p>
+
+<p>類別命名規則: (擷取官方圖片)</p>
+
+<div><img src="/images/flyway/java-migration1.png" width="800" height="150" alt="" /></div>
+
+<p><strong>❸ Script migrations</strong></p>
+
+<p>目前官方支援 .ps1, .bat, .cmd, .sh, .bash, .py 的腳本撰寫，其命名方式與 SQL-based migrations 相同，只差在腳本的副檔名不同。</p>
+
+<h2 id="如何開始使用-flyway-"><strong>如何開始使用 Flyway ？</strong></h2>
+
+<p>瞭解基本 Flyway 的 Migration 類型與實作種類，接著我將以 Spring Boot 與測試框架 TestContainers 進行實務上開發與測試的說明。</p>
+
+<h3 id="-實作一-搭配-spring-boot">❖ 實作一. 搭配 Spring Boot</h3>
+
+<p>以下三步驟即完成 Flyway 基於 Spring Boot 的實際用例配置</p>
+
+<p><strong>❶ Maven 配置</strong></p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">&lt;properties&gt;</span>
+    <span class="nt">&lt;java.version&gt;</span>11<span class="nt">&lt;/java.version&gt;</span>
+    <span class="nt">&lt;testcontainers.version&gt;</span>1.15.2<span class="nt">&lt;/testcontainers.version&gt;</span>
+<span class="nt">&lt;/properties&gt;</span>
+<span class="nt">&lt;dependencies&gt;</span>
+    <span class="c">&lt;!--Spring--&gt;</span>
+    <span class="nt">&lt;dependency&gt;</span>
+        <span class="nt">&lt;groupId&gt;</span>org.springframework.boot<span class="nt">&lt;/groupId&gt;</span>
+        <span class="nt">&lt;artifactId&gt;</span>spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;/dependency&gt;</span>
+    <span class="nt">&lt;dependency&gt;</span>
+        <span class="nt">&lt;groupId&gt;</span>org.springframework.boot<span class="nt">&lt;/groupId&gt;</span>
+        <span class="nt">&lt;artifactId&gt;</span>spring-boot-starter-web<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;/dependency&gt;</span><span class="sb">
+
+    &lt;!--Logger--&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+        &lt;artifactId&gt;spring-boot-starter-logging&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+
+    &lt;!--Database--&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+        &lt;artifactId&gt;spring-boot-starter-data-jpa&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;mysql&lt;/groupId&gt;
+        &lt;artifactId&gt;mysql-connector-java&lt;/artifactId&gt;
+        &lt;version&gt;8.0.23&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+        &lt;artifactId&gt;spring-boot-starter-jdbc&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+
+    &lt;!--Flyway--&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.flywaydb&lt;/groupId&gt;
+        &lt;artifactId&gt;flyway-core&lt;/artifactId&gt;
+        &lt;version&gt;6.5.7&lt;/version&gt;
+    &lt;/dependency&gt;
+
+    &lt;!--Testing--&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+        &lt;artifactId&gt;spring-boot-starter-test&lt;/artifactId&gt;
+        &lt;scope&gt;test&lt;/scope&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.testcontainers&lt;/groupId&gt;
+        &lt;artifactId&gt;junit-jupiter&lt;/artifactId&gt;
+        &lt;scope&gt;test&lt;/scope&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.testcontainers&lt;/groupId&gt;
+        &lt;artifactId&gt;mysql&lt;/artifactId&gt;
+        &lt;scope&gt;test&lt;/scope&gt;
+    &lt;/dependency&gt;
+
+</span><span class="nt">&lt;/dependencies&gt;</span>
+<span class="nt">&lt;dependencyManagement&gt;</span>
+    <span class="nt">&lt;dependencies&gt;</span>
+        <span class="nt">&lt;dependency&gt;</span>
+            <span class="nt">&lt;groupId&gt;</span>org.testcontainers<span class="nt">&lt;/groupId&gt;</span>
+            <span class="nt">&lt;artifactId&gt;</span>testcontainers-bom<span class="nt">&lt;/artifactId&gt;</span>
+            <span class="nt">&lt;version&gt;</span>${testcontainers.version}<span class="nt">&lt;/version&gt;</span>
+            <span class="nt">&lt;type&gt;</span>pom<span class="nt">&lt;/type&gt;</span>
+            <span class="nt">&lt;scope&gt;</span>import<span class="nt">&lt;/scope&gt;</span>
+        <span class="nt">&lt;/dependency&gt;</span>
+    <span class="nt">&lt;/dependencies&gt;</span>
+<span class="nt">&lt;/dependencyManagement&gt;</span>
+</code></pre></div></div>
+
+<p><strong>❷  設定檔配置</strong></p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="gh"># ==============================================================</span>
+
+<span class="gh"># = 資料庫設定(非 Testcontainers 資料庫設定)</span>
+
+<span class="gh"># ==============================================================</span>
+
+spring.datasource.url=jdbc:mysql://localhost:3307/flyway_db?useUnicode=true&amp;characterEncoding=utf-8&amp;socketTimeout=60000&amp;connectTimeout=30000
+spring.datasource.username=flyuser
+spring.datasource.password=123456
+spring.jpa.show-sql=true
+spring.jpa.open-in-view=true
+spring.jpa.properties.hibernate.connection.release_mode=AUTO
+spring.jpa.hibernate.ddl-auto=validate
+
+<span class="gh">#最小空閒連接數</span>
+spring.datasource.hikari.minimum-idle=10 #連接池最大大小
+spring.datasource.hikari.maximum-pool-size=50 #連接最大空閒時長
+spring.datasource.hikari.idle-timeout=60000 #連接生命時長
+spring.datasource.hikari.max-lifetime=1800000 #連接的超時時長
+spring.datasource.hikari.connection-timeout=30000
+
+<span class="gu">## ==============================================================</span>
+
+<span class="gu">## FLYWAY 配置</span>
+
+<span class="gu">### ==============================================================</span>
+
+spring.flyway.url=jdbc:mysql://localhost:3307/flyway_db?useUnicode=true&amp;characterEncoding=utf-8&amp;socketTimeout=60000&amp;connectTimeout=30000
+spring.flyway.user=flyuser
+spring.flyway.password=123456
+spring.flyway.locations=classpath:doc/migration/common,classpath:db/migration
+spring.flyway.table=flyway_schema_history
+spring.flyway.baseline-on-migrate=true
+spring.flyway.baseline-version=1.0
+spring.flyway.out-of-order=true
+spring.flyway.validate-on-migrate=true
+spring.flyway.enabled=true
+
+<span class="gh"># ==============================================================</span>
+
+<span class="gh"># = LOGGING</span>
+
+<span class="gh"># ==============================================================</span>
+
+logging.level.org.hibernate.SQL=DEBUG
+logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE
+logging.level.org.flywaydb=debug
+logging.level.root=debug
+</code></pre></div></div>
+
+<p><strong>❸  建置 Migration 檔案(此例使用 SQL ＆ Java）</strong></p>
+
+<p><strong>SQL Base Migration</strong></p>
+
+<p>● V1.0__sql_base_migration_ddl.sql</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="n">IF</span> <span class="k">NOT</span> <span class="k">EXISTS</span> <span class="n">book_case</span>
+<span class="p">(</span>
+  <span class="n">id</span> <span class="nb">char</span><span class="p">(</span><span class="mi">36</span><span class="p">)</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">comment</span> <span class="s1">'流水號'</span><span class="p">,</span>
+  <span class="n">title</span> <span class="nb">varchar</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">comment</span> <span class="s1">'書名'</span><span class="p">,</span>
+  <span class="n">author</span> <span class="nb">varchar</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">comment</span> <span class="s1">'作者'</span><span class="p">,</span>
+  <span class="n">translator</span> <span class="nb">varchar</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">comment</span> <span class="s1">'譯者'</span><span class="p">,</span>
+  <span class="n">publisher</span> <span class="nb">varchar</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">comment</span> <span class="s1">'出版社'</span><span class="p">,</span>
+  <span class="n">publication_date</span> <span class="nb">datetime</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">comment</span> <span class="s1">'出版日期'</span><span class="p">,</span>
+  <span class="n">create_time</span> <span class="nb">datetime</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">comment</span> <span class="s1">'創建時間'</span><span class="p">,</span>
+  <span class="n">update_time</span> <span class="nb">datetime</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">comment</span> <span class="s1">'更新時間'</span><span class="p">,</span>
+  <span class="k">PRIMARY</span> <span class="k">KEY</span> <span class="p">(</span><span class="n">id</span><span class="p">),</span>
+  <span class="k">KEY</span> <span class="n">index_createTime</span> <span class="p">(</span><span class="n">create_time</span><span class="p">)</span>
+<span class="p">)</span><span class="n">ENGINE</span><span class="o">=</span><span class="n">InnoDB</span> <span class="k">DEFAULT</span> <span class="n">CHARSET</span><span class="o">=</span><span class="n">utf8mb4</span> <span class="k">COLLATE</span><span class="o">=</span><span class="n">utf8mb4_0900_ai_ci</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>● V1.1__sql_base_migration_dml.sql</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">book_case</span> <span class="p">(</span>
+    <span class="n">id</span><span class="p">,</span>
+    <span class="n">title</span><span class="p">,</span>
+    <span class="n">author</span><span class="p">,</span>
+    <span class="n">translator</span><span class="p">,</span>
+    <span class="n">publisher</span><span class="p">,</span>
+    <span class="n">publication_date</span><span class="p">,</span>
+    <span class="n">create_time</span><span class="p">,</span>
+    <span class="n">update_time</span><span class="p">)</span>
+  <span class="k">VALUES</span> <span class="p">(</span>
+    <span class="s1">'0157e79c-b2dd-4efe-ad40-320cc94c051e'</span><span class="p">,</span>
+    <span class="s1">'THE INFINITE GAME'</span><span class="p">,</span>
+    <span class="s1">'Simon Sinek'</span><span class="p">,</span>
+    <span class="s1">'Huang Tingmin'</span><span class="p">,</span>
+    <span class="s1">'Commonwealth Magazine'</span><span class="p">,</span>
+    <span class="s1">'2020-12-30 00:00:00'</span><span class="p">,</span>
+    <span class="s1">'2021-04-13 20:55:36'</span><span class="p">,</span>
+    <span class="s1">'2021-04-13 20:55:36'</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p><strong>Java Base Migration</strong></p>
+
+<p>● R__java_base_migration_sample.java</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">package</span> <span class="nn">db.migration</span><span class="o">;</span>
+
+<span class="kn">import</span> <span class="nn">org.flywaydb.core.api.migration.BaseJavaMigration</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">org.flywaydb.core.api.migration.Context</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">org.springframework.jdbc.core.JdbcTemplate</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">org.springframework.jdbc.core.PreparedStatementSetter</span><span class="o">;</span>
+
+<span class="kn">import</span> <span class="nn">java.sql.PreparedStatement</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">java.sql.SQLException</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">java.sql.Timestamp</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">java.time.LocalDateTime</span><span class="o">;</span>
+<span class="kn">import</span> <span class="nn">java.util.UUID</span><span class="o">;</span>
+
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">R__uuid_generator</span> <span class="kd">extends</span> <span class="nc">BaseJavaMigration</span> <span class="o">{</span>
+
+    <span class="nd">@Override</span>
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">migrate</span><span class="o">(</span><span class="nc">Context</span> <span class="n">context</span><span class="o">)</span> <span class="kd">throws</span> <span class="nc">Exception</span> <span class="o">{</span>
+        <span class="kd">final</span> <span class="no">UUID</span> <span class="n">id</span> <span class="o">=</span> <span class="no">UUID</span><span class="o">.</span><span class="na">randomUUID</span><span class="o">();</span>
+        <span class="nc">LocalDateTime</span> <span class="n">publishDate</span> <span class="o">=</span> <span class="nc">LocalDateTime</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">2020</span><span class="o">,</span> <span class="mi">12</span><span class="o">,</span> <span class="mi">30</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="mi">0</span><span class="o">);</span>
+        <span class="nc">String</span> <span class="n">sql</span> <span class="o">=</span> <span class="s">"INSERT INTO book_case (id, title, author, translator, publisher, publication_date, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"</span><span class="o">;</span>
+
+        <span class="nc">JdbcTemplate</span> <span class="n">template</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">JdbcTemplate</span><span class="o">(</span><span class="n">context</span><span class="o">.</span><span class="na">getConfiguration</span><span class="o">().</span><span class="na">getDataSource</span><span class="o">());</span>
+        <span class="n">template</span><span class="o">.</span><span class="na">update</span><span class="o">(</span><span class="n">sql</span><span class="o">,</span> <span class="k">new</span> <span class="nc">PreparedStatementSetter</span><span class="o">()</span> <span class="o">{</span>
+            <span class="kd">public</span> <span class="kt">void</span> <span class="nf">setValues</span><span class="o">(</span><span class="nc">PreparedStatement</span> <span class="n">preparedStatement</span><span class="o">)</span> <span class="kd">throws</span> <span class="nc">SQLException</span> <span class="o">{</span>
+                <span class="n">preparedStatement</span><span class="o">.</span><span class="na">setString</span><span class="o">(</span><span class="mi">1</span><span class="o">,</span> <span class="n">id</span><span class="o">.</span><span class="na">toString</span><span class="o">());</span>
+                <span class="n">preparedStatement</span><span class="o">.</span><span class="na">setString</span><span class="o">(</span><span class="mi">2</span><span class="o">,</span> <span class="s">"THE INFINITE GAME"</span><span class="o">);</span>
+                <span class="n">preparedStatement</span><span class="o">.</span><span class="na">setString</span><span class="o">(</span><span class="mi">3</span><span class="o">,</span> <span class="s">"Simon Sinek"</span><span class="o">);</span>
+                <span class="n">preparedStatement</span><span class="o">.</span><span class="na">setString</span><span class="o">(</span><span class="mi">4</span><span class="o">,</span> <span class="s">"Huang Tingmin"</span><span class="o">);</span>
+                <span class="n">preparedStatement</span><span class="o">.</span><span class="na">setString</span><span class="o">(</span><span class="mi">5</span><span class="o">,</span> <span class="s">"Commonwealth Magazine"</span><span class="o">);</span>
+                <span class="n">preparedStatement</span><span class="o">.</span><span class="na">setTimestamp</span><span class="o">(</span><span class="mi">6</span><span class="o">,</span> <span class="nc">Timestamp</span><span class="o">.</span><span class="na">valueOf</span><span class="o">(</span><span class="n">publishDate</span><span class="o">));</span>
+                <span class="n">preparedStatement</span><span class="o">.</span><span class="na">setTimestamp</span><span class="o">(</span><span class="mi">7</span><span class="o">,</span> <span class="nc">Timestamp</span><span class="o">.</span><span class="na">valueOf</span><span class="o">(</span><span class="nc">LocalDateTime</span><span class="o">.</span><span class="na">now</span><span class="o">()));</span>
+                <span class="n">preparedStatement</span><span class="o">.</span><span class="na">setTimestamp</span><span class="o">(</span><span class="mi">8</span><span class="o">,</span> <span class="nc">Timestamp</span><span class="o">.</span><span class="na">valueOf</span><span class="o">(</span><span class="nc">LocalDateTime</span><span class="o">.</span><span class="na">now</span><span class="o">()));</span>
+            <span class="o">}</span>
+        <span class="o">});</span>
+    <span class="o">}</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p><strong>專案架構以及配置參數說明</strong></p>
+
+<p>● 專案結構 (分別列出 SQL Base Migration &amp; Java Base Migration)</p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code>├── pom.xml
+├── src
+│ ├── main
+│ │ ├── java
+│ │ │ ├── META-INF
+│ │ │ ├── com
+│ │ │ │ └── tpisoftware
+│ │ │ └── db
+│ │ │ └── migration
+│ │ │ └── R＿java_base_migration_sample.java
+│ │ └── resources
+│ │ ├── doc
+│ │ │ ├── migration
+│ │ │ │ └── common
+│ │ │ │ ├── V1.0＿sql_base_migration_ddl.sql
+│ │ │ │ ├── V1.1＿sql_base_migration_dml.sql
+</code></pre></div></div>
+
+<p>● 配置參數概述</p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code>◆ 連線配置
+與 datasource 配置相同，當 Application 啟動時，flyway 將會進行連線，並執行 migration
+‣ spring.flyway.url
+‣ spring.flyway.user
+‣ spring.flyway.password
+
+◆ 檔案存取位置
+可接受多個參數(請用逗號分隔)，指定 flyway 讀取執行 migration 的路徑
+‣ spring.flyway.locations
+
+◆ 歷史紀錄表定義
+Flyway 歷史紀錄表預設命名為 flyway_schema_history，若有需要可以更改名稱
+‣ spring.flyway.table
+
+◆ 是否執行起始版號
+當資料庫不為空，是否要執行起始版本，並建立歷史紀錄表，預設為 false，如果並非在專案一開始就導入 flyway，就需要設定為 true
+‣ spring.flyway.baseline-on-migrate
+
+◆ 起始版本設定
+設定 migration 的起始版號
+‣ spring.flyway.baseline-version
+
+◆ 執行 migration 是否允許無序執行
+‣ spring.flyway.out-of-order
+
+◆ 執行 migration 是否自動驗證
+‣ spring.flyway.validate-on-migrate
+
+◆ 是否啟用 Flyway
+‣ spring.flyway.enabled
+</code></pre></div></div>
+
+<h3 id="-實作二-搭配測試框架-testcontainers-的驗證">❖ 實作二. 搭配測試框架 TestContainers 的驗證</h3>
+
+<p>以下說明 Flyway 基於 Spring Boot Test With TestContainers 的測試驗證。</p>
+
+<p><strong>❶ 容器化測試基本建立方式可以<a href="https://www.tpisoftware.com/tpu/articleDetails/1997">點選此查閱此篇文章</a>，有詳細介紹容器化測試框架，此文不贅述。</strong></p>
+
+<p><strong>❷ 動態載入 datasource 參數，指定給 flyway 的連線配置(與 spring datasource 相同)</strong></p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/**
+ * 動態設定參數
+ * @param registry
+ */</span>
+<span class="nd">@DynamicPropertySource</span>
+<span class="kd">static</span> <span class="kt">void</span> <span class="nf">mssqlProperties</span><span class="o">(</span><span class="nc">DynamicPropertyRegistry</span> <span class="n">registry</span><span class="o">)</span> <span class="o">{</span>
+    <span class="c1">//mysql properties setting</span>
+    <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.datasource.driver-class-name"</span><span class="o">,</span> <span class="nl">mySQLContainer:</span><span class="o">:</span><span class="n">getDriverClassName</span><span class="o">);</span>
+    <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.datasource.url"</span><span class="o">,</span> <span class="o">()</span> <span class="o">-&gt;</span> <span class="n">mySQLContainer</span><span class="o">.</span><span class="na">getJdbcUrl</span><span class="o">());</span>
+    <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.datasource.username"</span><span class="o">,</span> <span class="nl">mySQLContainer:</span><span class="o">:</span><span class="n">getUsername</span><span class="o">);</span>
+    <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.datasource.password"</span><span class="o">,</span> <span class="nl">mySQLContainer:</span><span class="o">:</span><span class="n">getPassword</span><span class="o">);</span>
+
+    <span class="c1">//flyway properties setting</span>
+    <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.flyway.url"</span><span class="o">,</span> <span class="o">()</span> <span class="o">-&gt;</span> <span class="n">mySQLContainer</span><span class="o">.</span><span class="na">getJdbcUrl</span><span class="o">());</span>
+    <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.flyway.user"</span><span class="o">,</span> <span class="nl">mySQLContainer:</span><span class="o">:</span><span class="n">getUsername</span><span class="o">);</span>
+    <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.flyway.password"</span><span class="o">,</span> <span class="nl">mySQLContainer:</span><span class="o">:</span><span class="n">getPassword</span><span class="o">);</span>
+    <span class="n">registry</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="s">"spring.flyway.enabled"</span><span class="o">,</span> <span class="o">()</span> <span class="o">-&gt;</span> <span class="s">"true"</span><span class="o">);</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p><strong>❸ 完成配置運行 Spring Test 時會進行以下動作：</strong></p>
+
+<p>● TestContainers 啟動本地端的 MySQL Container</p>
+
+<div><img src="/images/flyway/testcontainers1.png" width="800" height="150" alt="" /></div>
+
+<p>● Flyway 進行驗證</p>
+
+<div><img src="/images/flyway/testcontainers2.png" width="800" height="150" alt="" /></div>
+
+<p>● Flyway 執行 Migration</p>
+
+<div><img src="/images/flyway/testcontainers3.png" width="800" height="150" alt="" /></div>
+
+<p>● 運行測試程式</p>
+
+<div><img src="/images/flyway/testcontainers4.png" width="800" height="150" alt="" /></div>
+
+<h3 id="-實作三-使用-maven-運行-flyway">❖ 實作三. 使用 Maven 運行 Flyway</h3>
+
+<p>以下為 Flyway 基於 Maven 的實際用例。</p>
+
+<p><strong>❶ 新增 Maven-Plugin</strong></p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">&lt;plugin&gt;</span>
+    <span class="nt">&lt;groupId&gt;</span>org.flywaydb<span class="nt">&lt;/groupId&gt;</span>
+    <span class="nt">&lt;artifactId&gt;</span>flyway-maven-plugin<span class="nt">&lt;/artifactId&gt;</span>
+    <span class="nt">&lt;version&gt;</span>6.5.7<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/plugin&gt;</span>
+</code></pre></div></div>
+
+<p><strong>❷ Maven Flyway Configuration 配置</strong></p>
+
+<p><a href="https://flywaydb.org/documentation/database/mysql">請點選這裡查看資料庫支援及設定說明</a>（本例使用 MySQL，並在本地端啟用 Docker mysql/mysql-server:8.0 作測試）</p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">&lt;configuration&gt;</span>
+    <span class="nt">&lt;driver&gt;</span>com.mysql.jdbc.Driver<span class="nt">&lt;/driver&gt;</span>
+    <span class="nt">&lt;url&gt;</span>jdbc:mysql://localhost:3307/flyway_db<span class="nt">&lt;/url&gt;</span>
+    <span class="nt">&lt;user&gt;</span>flyuser<span class="nt">&lt;/user&gt;</span>
+    <span class="nt">&lt;password&gt;</span>123456<span class="nt">&lt;/password&gt;</span>
+    <span class="nt">&lt;connectRetries&gt;</span>3<span class="nt">&lt;/connectRetries&gt;</span>
+    <span class="nt">&lt;createSchemas&gt;</span>true<span class="nt">&lt;/createSchemas&gt;</span>
+    <span class="nt">&lt;table&gt;</span>flyway_schema_history<span class="nt">&lt;/table&gt;</span>
+    <span class="nt">&lt;locations&gt;</span>
+        <span class="nt">&lt;location&gt;</span>classpath:doc/migration/common<span class="nt">&lt;/location&gt;</span>
+        <span class="nt">&lt;location&gt;</span>classpath:db/migration<span class="nt">&lt;/location&gt;</span>
+    <span class="nt">&lt;/locations&gt;</span>
+    <span class="nt">&lt;encoding&gt;</span>utf-8<span class="nt">&lt;/encoding&gt;</span>
+    <span class="nt">&lt;target&gt;</span>1.0<span class="nt">&lt;/target&gt;</span>
+    <span class="nt">&lt;outOfOrder&gt;</span>true<span class="nt">&lt;/outOfOrder&gt;</span>
+    <span class="nt">&lt;validateOnMigrate&gt;</span>true<span class="nt">&lt;/validateOnMigrate&gt;</span>
+    <span class="nt">&lt;baselineOnMigrate&gt;</span>true<span class="nt">&lt;/baselineOnMigrate&gt;</span>
+    <span class="nt">&lt;baselineVersion&gt;</span>1.0<span class="nt">&lt;/baselineVersion&gt;</span>
+    <span class="nt">&lt;baselineDescription&gt;</span>Let's go!<span class="nt">&lt;/baselineDescription&gt;</span>
+<span class="nt">&lt;/configuration&gt;</span>
+</code></pre></div></div>
+
+<p><strong>❸ 執行 Migration(-X 查看完整紀錄)</strong></p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mvn flyway:migrate -X
+</code></pre></div></div>
+
+<p><strong>❹ 運行結果（附上分段截圖）</strong></p>
+
+<p><strong>Maven 執行，Flyway 讀取 Migration 檔案中</strong></p>
+
+<div><img src="/images/flyway/mvn1.png" width="800" height="150" alt="" /></div>
+<div><img src="/images/flyway/mvn2.png" width="800" height="150" alt="" /></div>
+<p><strong>Flyway 的 Migration 檔案驗證通過後，會開始執行 Migration</strong></p>
+<div><img src="/images/flyway/mvn3.png" width="800" height="150" alt="" /></div>
+
+<p><strong>查看資料庫，確認 DDL &amp; DML 確實執行完畢</strong></p>
+
+<div><img src="/images/flyway/mvn4.png" width="800" height="150" alt="" /></div>
+
+<p><strong>瞭解上述的運作原理及實作方式，另外可依據專案需求自行決定以下執行 Migration 的方式</strong></p>
+
+<p><strong>❶ Command-line tool</strong></p>
+
+<p>Linux / Docker / Windows /Mac OS 皆有支援。</p>
+
+<p><a href="https://flywaydb.org/documentation/usage/commandline/">點選此直接查看官網使用說明。</a></p>
+
+<p><strong>❷ Gradle</strong></p>
+
+<p>支援 Gradle 3.x, Gradle 4.x, Gradle 5.x, and Gradle 6.x 可運行在 Java 8, Java 9, Java 10, Java 11 or Java 12.</p>
+
+<p><a href="https://flywaydb.org/documentation/usage/gradle/">點選此直接查看官網使用說明。</a></p>
+
+<h2 id="既有系統如何導入-flyway-"><strong>既有系統如何導入 Flyway ？</strong></h2>
+
+<p>前面的情境都是以資料庫初始化的狀態說明，那如果既有系統也想導入呢? 以下列出四個步驟</p>
+
+<p><strong>❶ 備份 DML 以及 匯出 DDL。</strong></p>
+
+<p><strong>❷ 先在本地端實際運行一次 Migration，執行 DML&amp;DDL。</strong></p>
+
+<p><strong>❸ 匯出上一步驟寫入 flyway_schema_history 的資料。</strong></p>
+
+<p><strong>❹ 連線至測試環境手動建立 flyway_schema_history 並匯入資料。</strong></p>
+
+<p>執行完上述步驟，Flyway 啟用後即不會再重複執行 DML &amp; DDL，只會運行後續新增的版本。</p>
+
+<h2 id="總結"><strong>總結</strong></h2>
+
+<p>本篇文章整理出 Flyway 的實際案例，盡可能點出大部分的使用情境，從 Migration 觀念建立、搭配專案常使用的 Spring Boot、測試框架驗證、Flyway Maven Plugin 使用，以及既有系統的導入指引。</p>
+
+<p>Flyway 本身有提供付費版本，在官方文件中皆以[Flyway Teams]標記標註，另外 Flyway 還提供了 Callback 功能，方便我們可以自行依據需求在 Migration 前執行一些動作，本篇文章介紹的 Migration 功能基本上就能應付大多數情境，而 Maven 的方式則可以搭配 CICD，相信能夠一定程度節省專案開發協作與交付的時間。</p>
+
+<p>更多的細節，以下提供官方提供的文檔以及相關資訊作為參考。</p>
+
+<hr />
+
+<p>References:</p>
+
+<ul>
+  <li>Flyway 文件 <a href="https://flywaydb.org/documentation/">https://flywaydb.org/documentation/</a></li>
+  <li>Flyway Spring Boot: <a href="https://flywaydb.org/documentation/usage/plugins/springboot">https://flywaydb.org/documentation/usage/plugins/springboot</a></li>
+</ul>
+:ET
